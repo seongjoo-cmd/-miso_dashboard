@@ -1,9 +1,9 @@
 """구글 드라이브 녹취 백업(정리).
 
 녹취 파일은 드라이브에 있으므로 서버가 직접 옮기지 못한다.
-1. 관리자가 상담원별 백업을 요청하면 drive_tasks 에 'pending' 으로 쌓는다.
-2. Apps Script 가 5분마다 GET /api/drive/tasks 로 가져가서, 그 상담원 폴더의 파일을
-   먼저 대시보드에 적재(누락 방지)한 뒤 같은 드라이브의 '_백업/<상담원>' 폴더로 옮긴다.
+1. 관리자가 에이전트별 백업을 요청하면 drive_tasks 에 'pending' 으로 쌓는다.
+2. Apps Script 가 5분마다 GET /api/drive/tasks 로 가져가서, 그 에이전트 폴더의 파일을
+   먼저 대시보드에 적재(누락 방지)한 뒤 같은 드라이브의 '_백업/<에이전트>' 폴더로 옮긴다.
 3. 옮긴 파일 ID 를 POST /api/drive/tasks/<id> 로 알려 주면 calls.archived_at 을 기록한다.
 드라이브 안에서 옮기는 것이라 파일 ID 가 그대로여서 조회·재생은 계속 된다.
 """
@@ -33,7 +33,7 @@ def request(conn, agent_id: int, requested_by: str) -> dict:
 
 
 def request_many(conn, agent_ids: list[int], requested_by: str) -> int:
-    """고른 상담원들 백업 요청. 이미 대기 중이거나 없는 상담원은 건너뛴다. 새로 요청한 수."""
+    """고른 에이전트들 백업 요청. 이미 대기 중이거나 없는 에이전트는 건너뛴다. 새로 요청한 수."""
     n = 0
     for aid in dict.fromkeys(int(a) for a in agent_ids):
         if not conn.execute("SELECT 1 FROM agents WHERE id = ?", (aid,)).fetchone():
@@ -46,7 +46,7 @@ def request_many(conn, agent_ids: list[int], requested_by: str) -> int:
 
 
 def request_all(conn, requested_by: str) -> int:
-    """백업 안 한 녹취가 있는 모든 상담원을 한 번에 요청. 새로 요청한 수를 돌려준다."""
+    """백업 안 한 녹취가 있는 모든 에이전트를 한 번에 요청. 새로 요청한 수를 돌려준다."""
     rows = conn.execute(
         """
         SELECT DISTINCT c.agent_id FROM calls c JOIN agents a ON a.id = c.agent_id
@@ -59,7 +59,7 @@ def request_all(conn, requested_by: str) -> int:
 
 
 def pending(conn) -> list[dict]:
-    """Apps Script 가 처리할 요청: 상담원 폴더 이름과 함께."""
+    """Apps Script 가 처리할 요청: 에이전트 폴더 이름과 함께."""
     rows = conn.execute(
         """
         SELECT t.id, COALESCE(a.sync_dir, a.name) AS agent
@@ -95,7 +95,7 @@ def report(conn, task_id: int, status: str, moved_ids: list, failed: int = 0, me
 
 
 def overview(conn) -> dict:
-    """설정 화면용: 상담원별 아직 백업 안 한 녹취 수 + 대기 중 요청 + 최근 기록."""
+    """설정 화면용: 에이전트별 아직 백업 안 한 녹취 수 + 대기 중 요청 + 최근 기록."""
     agents = conn.execute(
         """
         SELECT a.id AS agent_id, a.name,

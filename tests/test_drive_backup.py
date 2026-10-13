@@ -47,12 +47,12 @@ class DriveBackupTest(unittest.TestCase):
 
     def test_other_agents_files_untouched(self):
         t = drive_backup.request(self.conn, self.kim, "admin")
-        drive_backup.report(self.conn, t["id"], "done", ["a1", "b1"])  # b1 은 다른 상담원 → 무시
+        drive_backup.report(self.conn, t["id"], "done", ["a1", "b1"])  # b1 은 다른 에이전트 → 무시
         self.assertEqual(self.waiting()["이서준"], 1)
 
     def test_request_all(self):
         lee = self.conn.execute("SELECT id FROM agents WHERE name = '이서준'").fetchone()[0]
-        drive_backup.request(self.conn, lee, "admin")  # 이미 대기 중인 상담원은 그대로
+        drive_backup.request(self.conn, lee, "admin")  # 이미 대기 중인 에이전트는 그대로
         self.assertEqual(drive_backup.request_all(self.conn, "admin"), 1)
         self.assertEqual(sorted(t["agent"] for t in drive_backup.pending(self.conn)), ["김민지", "이서준"])
         self.assertEqual(drive_backup.request_all(self.conn, "admin"), 0)  # 다시 눌러도 중복 요청 없음

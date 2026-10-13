@@ -81,7 +81,7 @@ def _agents(conn, agent_id: int | None) -> list[sqlite3.Row]:
 
 
 def daily_matrix(conn, p: Period, agent_id: int | None) -> dict:
-    """행=상담원, 열=날짜, 셀=처리 건수(짧은 통화 포함 전체). 행·열 합계 포함."""
+    """행=에이전트, 열=날짜, 셀=처리 건수(짧은 통화 포함 전체). 행·열 합계 포함."""
     where, args = _where(p, agent_id)
     rows = conn.execute(
         f"""
@@ -97,7 +97,7 @@ def daily_matrix(conn, p: Period, agent_id: int | None) -> dict:
     by_agent = {a["id"]: [0] * len(dates) for a in agents}
     names = {a["id"]: a["name"] for a in agents}
     for r in rows:
-        if r["agent_id"] not in by_agent:  # 비활성 상담원의 과거 통화
+        if r["agent_id"] not in by_agent:  # 비활성 에이전트의 과거 통화
             by_agent[r["agent_id"]] = [0] * len(dates)
             names[r["agent_id"]] = conn.execute(
                 "SELECT name FROM agents WHERE id = ?", (r["agent_id"],)).fetchone()["name"]
@@ -141,7 +141,7 @@ def agent_performance(conn, p: Period, agent_id: int | None) -> list[dict]:
 
 
 def daily_trend(conn, p: Period, agent_id: int | None) -> dict:
-    """일별 통화량(전체 통화 기준) — 상담원별 시리즈 + 합계."""
+    """일별 통화량(전체 통화 기준) — 에이전트별 시리즈 + 합계."""
     where, args = _where(p, agent_id)
     rows = conn.execute(
         f"""

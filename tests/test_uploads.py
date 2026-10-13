@@ -120,7 +120,7 @@ class SlackTest(unittest.TestCase):
     def test_all_uploaded_message(self):
         agents = [{"name": "가", "missing": False, "today": 4, "last_upload": "2026-10-13 09:00:00"}]
         text, _ = slack.missing_message(agents, TODAY, datetime(2026, 10, 13, 18, 0), None)
-        self.assertIn("모든 상담원", text)
+        self.assertIn("모든 에이전트", text)
 
     def test_send_dm_by_email(self):
         conn = connect(":memory:")

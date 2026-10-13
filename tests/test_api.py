@@ -153,7 +153,7 @@ class ApiTest(unittest.TestCase):
         v = self.login("viewer", "pw-viewer")
         self.assertEqual(self.req("GET", "/api/drive/script", token=v)[0], 403)
 
-        body = {"first": True, "files": [{"id": "drvA", "agent": "드라이브상담원", "size": 1000, "durationMs": 61000,
+        body = {"first": True, "files": [{"id": "drvA", "agent": "드라이브에이전트", "size": 1000, "durationMs": 61000,
                                           "name": "통화 녹음 010-5555-6666_261012_150000.mp4"}]}
         c = HTTPConnection("127.0.0.1", self.port)
         c.request("POST", "/api/drive/push", json.dumps(body), {"Content-Type": "application/json", "X-CTI-Token": "nope"})
@@ -191,11 +191,11 @@ class ApiTest(unittest.TestCase):
         script("/api/drive/run", {"ok": True, "added": 2})
         self.assertEqual(self.req("GET", "/api/drive/status", token=v)[1]["state"], "ok")
 
-        # 녹취 없는 상담원 폴더도 목록에 들어오고, 오늘 안 올린 사람으로 보인다
-        script("/api/drive/push", {"first": True, "files": [], "folders": ["빈폴더상담원"]})
+        # 녹취 없는 에이전트 폴더도 목록에 들어오고, 오늘 안 올린 사람으로 보인다
+        script("/api/drive/push", {"first": True, "files": [], "folders": ["빈폴더에이전트"]})
         u = self.req("GET", "/api/uploads", token=a)[1]
         rows = {r["name"]: r for r in u["agents"]}
-        self.assertTrue(rows["빈폴더상담원"]["missing"])
+        self.assertTrue(rows["빈폴더에이전트"]["missing"])
         self.assertFalse(rows["가"]["missing"])  # today=10-12 에 통화가 있음
         self.assertEqual(u["slack"], {"token_set": False, "token_source": None, "target": ""})
         self.assertNotIn("slack", self.req("GET", "/api/uploads", token=v)[1])

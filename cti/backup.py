@@ -1,9 +1,9 @@
-"""상담원 동기화 폴더 백업 후 비우기.
+"""에이전트 동기화 폴더 백업 후 비우기.
 
 절차
 1. 폴더의 녹취 파일을 통화 기록으로 먼저 적재한다(지운 뒤에는 기록을 만들 수 없음).
 2. 최근 1분 안에 수정된(동기화 중인) 파일을 뺀 파일 목록을 고정(스냅샷)한다.
-3. 스냅샷 파일들을 BACKUP_ROOT/<상담원ID>/<타임스탬프>.zip 으로 묶는다.
+3. 스냅샷 파일들을 BACKUP_ROOT/<에이전트ID>/<타임스탬프>.zip 으로 묶는다.
 4. zip 무결성 검사(testzip)와 파일 수 확인이 통과한 경우에만
    스냅샷에 포함된 파일만 삭제한다(작업 중 새로 들어온 파일은 남긴다).
 5. 백업 이력을 기록한다.
@@ -33,7 +33,7 @@ def _agent_lock(agent_id: int) -> threading.Lock:
 
 
 def sync_dir_for(agent: sqlite3.Row, sync_root: Path) -> Path:
-    """상담원 동기화 폴더. SYNC_ROOT 밖의 경로는 거부한다(오설정으로 엉뚱한 폴더 삭제 방지)."""
+    """에이전트 동기화 폴더. SYNC_ROOT 밖의 경로는 거부한다(오설정으로 엉뚱한 폴더 삭제 방지)."""
     raw = agent["sync_dir"] or agent["name"]
     path = (sync_root / raw).resolve()
     root = sync_root.resolve()
@@ -45,7 +45,7 @@ def sync_dir_for(agent: sqlite3.Row, sync_root: Path) -> Path:
 def folder_status(conn: sqlite3.Connection, agent_id: int, sync_root: Path) -> dict:
     agent = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
     if agent is None:
-        raise BackupError("상담원을 찾을 수 없습니다.")
+        raise BackupError("에이전트를 찾을 수 없습니다.")
     try:
         folder = sync_dir_for(agent, sync_root)
     except BackupError as e:
@@ -74,12 +74,12 @@ def backup_and_clear(conn: sqlite3.Connection, agent_id: int, sync_root: Path,
                      backup_root: Path, performed_by: str) -> dict:
     agent = conn.execute("SELECT * FROM agents WHERE id = ?", (agent_id,)).fetchone()
     if agent is None:
-        raise BackupError("상담원을 찾을 수 없습니다.")
+        raise BackupError("에이전트를 찾을 수 없습니다.")
     folder = sync_dir_for(agent, sync_root)
 
     lock = _agent_lock(agent_id)
     if not lock.acquire(blocking=False):
-        raise BackupError("이미 이 상담원의 백업이 진행 중입니다.")
+        raise BackupError("이미 이 에이전트의 백업이 진행 중입니다.")
     try:
         if not folder.is_dir():
             raise BackupError(f"동기화 폴더가 없습니다: {folder}")

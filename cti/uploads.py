@@ -1,4 +1,4 @@
-"""드라이브 연결 상태와 상담원별 녹취 업로드 현황.
+"""드라이브 연결 상태와 에이전트별 녹취 업로드 현황.
 
 - 연결 상태: Apps Script 가 대시보드에 들를 때마다(새 녹취 보내기·백업 요청 확인) 시각을 남기고,
   새 스크립트는 회차가 끝날 때 결과(성공·오류)도 알려 준다. 자동 실행은 5분마다라서
@@ -61,7 +61,7 @@ def drive_status(conn, now: datetime | None = None) -> dict:
 
 
 def agent_uploads(conn, today: date) -> list[dict]:
-    """활성 상담원별 마지막 업로드 시각과 오늘 올린 수. 오늘 하나도 없으면 missing."""
+    """활성 에이전트별 마지막 업로드 시각과 오늘 올린 수. 오늘 하나도 없으면 missing."""
     start = today.isoformat() + " 00:00:00"
     rows = conn.execute(
         """

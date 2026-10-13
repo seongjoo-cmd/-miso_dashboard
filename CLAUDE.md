@@ -1,6 +1,6 @@
 # miso internet sales 통화 대시보드
 
-아웃바운드 상담원의 녹취 파일을 통화 기록으로 모아 보여 주는 사내 대시보드. 사용자 안내·기능 설명은 README.md 참고.
+아웃바운드 에이전트의 녹취 파일을 통화 기록으로 모아 보여 주는 사내 대시보드. 사용자 안내·기능 설명은 README.md 참고.
 
 ## 구조
 - 백엔드: Python 표준 라이브러리만(`http.server`). `cti/app.py` 가 라우팅 전부, 집계는 `cti/dashboard.py`, 적재는 `cti/ingest.py`.

@@ -1,4 +1,4 @@
-"""데모 데이터(가짜 상담원·통화) 생성 — 화면 확인용."""
+"""데모 데이터(가짜 에이전트·통화) 생성 — 화면 확인용."""
 from __future__ import annotations
 
 import os

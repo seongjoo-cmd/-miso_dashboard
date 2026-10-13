@@ -2,7 +2,7 @@
 
 환경 변수
 - CTI_DB           SQLite 파일 경로        (기본: ./data/cti.db)
-- CTI_SYNC_ROOT    상담원 동기화 폴더 루트  (기본: ./data/sync)
+- CTI_SYNC_ROOT    에이전트 동기화 폴더 루트  (기본: ./data/sync)
 - CTI_BACKUP_ROOT  백업 zip 저장 위치      (기본: ./data/backup)
 - CTI_HOST / CTI_PORT                      (기본: 127.0.0.1 / 8080)
 - CTI_INGEST_INTERVAL 녹취 폴더 자동 적재 주기(초, 0이면 끔) (기본: 300)
@@ -136,7 +136,7 @@ def _parse_agent(q: dict) -> int | None:
     if not v:
         return None
     if not v.isdigit():
-        raise ApiError(HTTPStatus.BAD_REQUEST, "잘못된 상담원 ID")
+        raise ApiError(HTTPStatus.BAD_REQUEST, "잘못된 에이전트 ID")
     return int(v)
 
 
@@ -406,7 +406,7 @@ def make_handler(cfg: Config):
                 if method == "POST":
                     ids = self._read_json().get("agent_ids")
                     if not isinstance(ids, list) or not ids or not all(isinstance(i, int) for i in ids):
-                        raise ApiError(HTTPStatus.BAD_REQUEST, "백업할 상담원을 골라 주세요.")
+                        raise ApiError(HTTPStatus.BAD_REQUEST, "백업할 에이전트를 골라 주세요.")
                     n = drive_backup.request_many(conn, ids, user["username"])
                     return self._send_json(200, {**drive_backup.overview(conn), "requested": n})
                 if method == "GET" and not path.endswith("/all"):
@@ -488,7 +488,7 @@ def make_handler(cfg: Config):
                     cur, _ = _parse_period(cfg, q)
                     detail = dashboard.agent_detail(conn, agent_id, cur)
                     if detail is None:
-                        raise ApiError(HTTPStatus.NOT_FOUND, "상담원을 찾을 수 없습니다.")
+                        raise ApiError(HTTPStatus.NOT_FOUND, "에이전트를 찾을 수 없습니다.")
                     if user["role"] == "admin" and SOURCE == "folder":
                         detail["sync_folder"] = backup.folder_status(conn, agent_id, cfg.sync_root)
                         detail["backups"] = backup.history(conn, agent_id)
@@ -499,7 +499,7 @@ def make_handler(cfg: Config):
                     self._read_json()  # Content-Type 강제(CSRF 완화)
                     if SOURCE == "drive":
                         if not conn.execute("SELECT 1 FROM agents WHERE id = ?", (agent_id,)).fetchone():
-                            raise ApiError(HTTPStatus.NOT_FOUND, "상담원을 찾을 수 없어요.")
+                            raise ApiError(HTTPStatus.NOT_FOUND, "에이전트를 찾을 수 없어요.")
                         drive_backup.request(conn, agent_id, user["username"])
                         return self._send_json(200, drive_backup.overview(conn))
                     result = backup.backup_and_clear(

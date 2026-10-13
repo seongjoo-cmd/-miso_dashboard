@@ -20,7 +20,7 @@
   // ---------- 색 ----------
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const isDark = () => false; // 라이트 모드만 지원
-  // 상담원 비교 선 색 — 상담원 ID 순서에 고정(필터로 다시 칠하지 않음). 색약 검증된 순서.
+  // 에이전트 비교 선 색 — 에이전트 ID 순서에 고정(필터로 다시 칠하지 않음). 색약 검증된 순서.
   const CAT = {
     light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"],
     dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"],
@@ -218,7 +218,7 @@
     const agents = await api("/api/agents");
     agentOrder = agents.map((a) => a.id).sort((a, b) => a - b);
     const sel = $("#agent-filter");
-    sel.replaceChildren(el("option", { value: "" }, "상담원 전체"),
+    sel.replaceChildren(el("option", { value: "" }, "에이전트 전체"),
       ...agents.map((a) => el("option", { value: a.id }, a.name)));
     if (!agents.some((a) => String(a.id) === String(state.agentId))) state.agentId = "";
     sel.value = state.agentId;
@@ -278,7 +278,7 @@
     $("#start-date").value = state.start || todayIso();
     $("#end-date").value = state.end || todayIso();
     const sel = $("#agent-filter");
-    $("#agent-chip-label").textContent = sel.selectedOptions[0]?.textContent || "상담원 전체";
+    $("#agent-chip-label").textContent = sel.selectedOptions[0]?.textContent || "에이전트 전체";
     sel.closest(".chip-select").classList.toggle("on", !!state.agentId);
   }
   $$(".chip[data-preset]").forEach((b) => b.addEventListener("click", () => {
@@ -349,7 +349,7 @@
     const insight = calls.value === 0
       ? "아직 통화 기록이 없어요."
       : !state.agentId && top && top.handled
-        ? [`가장 많이 처리한 상담원은 `, el("b", {}, `${top.name}님`), `이에요 · ${fmtInt(top.handled)}건`]
+        ? [`가장 많이 처리한 에이전트는 `, el("b", {}, `${top.name}님`), `이에요 · ${fmtInt(top.handled)}건`]
         : [`처리 건수는 `, el("b", {}, `${fmtInt(d.agent_performance.reduce((s, r) => s + r.handled, 0))}건`), `이에요 (짧은 통화 포함)`];
 
     const minis = [
@@ -424,7 +424,7 @@
     const single = n === 1;
     $("#trend-caption").textContent = single
       ? `${md(t.dates[0])} (${dow(t.dates[0])}) 하루 ${fmtInt(total)}건`
-      : `하루 평균 ${fmtInt(Math.round(total / n))}건 · 상담원을 누르면 비교해요`;
+      : `하루 평균 ${fmtInt(Math.round(total / n))}건 · 에이전트를 누르면 비교해요`;
     $("#trend-box").hidden = single;
     $("#trend-empty").hidden = !single;
     if (single) {
@@ -496,7 +496,7 @@
     });
   }
 
-  // ---------- 상담원 순위 ----------
+  // ---------- 에이전트 순위 ----------
   const RANK = [
     { key: "handled", label: "처리건수", fmt: (v) => `${fmtInt(v)}건` },
     { key: "total_sec", label: "통화시간", fmt: fmtDur },
@@ -520,7 +520,7 @@
           el("div", { class: "rank-sub" },
             `처리 ${fmtInt(r.handled)}건 · 평균 ${fmtClock(r.att_sec)} · 최장 ${fmtClock(r.longest_sec)}`),
           el("div", { class: "rank-bar" }, el("i", { style: `width:${((r[cur.key] || 0) / max) * 100}%` }))),
-        el("span", { class: "rank-val" }, cur.fmt(r[cur.key]))))) : [el("li", { class: "empty" }, "상담원이 없어요")]));
+        el("span", { class: "rank-val" }, cur.fmt(r[cur.key]))))) : [el("li", { class: "empty" }, "에이전트가 없어요")]));
   }
 
   // ---------- 일별 처리건수(히트맵) ----------
@@ -546,7 +546,7 @@
     $("#matrix").replaceChildren(thead, tbody, tfoot);
   }
 
-  // ---------- 상담원 상세 시트 ----------
+  // ---------- 에이전트 상세 시트 ----------
   async function openSheet(agentId) {
     state.sheetAgent = agentId;
     const sheet = $("#sheet");
@@ -881,7 +881,7 @@
     else if (cs.start === cs.end) parts.push(`${md(cs.start)} (${dow(cs.start)})`);
     else parts.push(`${md(cs.start)} ~ ${md(cs.end)}`);
     if (cs.hfrom > 0 || cs.hto < 24) parts.push(`${cs.hfrom}시~${cs.hto}시`);
-    if (cs.agentId) parts.push($(`#lk-agent option[value="${cs.agentId}"]`)?.textContent || "상담원");
+    if (cs.agentId) parts.push($(`#lk-agent option[value="${cs.agentId}"]`)?.textContent || "에이전트");
     if (cs.num) parts.push(`‘${cs.num}’`);
     if (cs.hideShort) parts.push("짧은 통화 제외");
     return parts.join(" · ");
@@ -943,7 +943,7 @@
       el("span", { class: "call-time" }, c.started_at.slice(11, 16)),
       el("span", { class: "call-main" },
         el("div", { class: `call-num${c.customer_masked ? "" : " none"}` }, c.customer_masked || "번호 없음"),
-        el("div", { class: "call-agent" }, `${c.agent_name} 상담원`)),
+        el("div", { class: "call-agent" }, `${c.agent_name} 에이전트`)),
       el("span", { class: `call-dur${c.duration_sec < minSec ? " short" : ""}` }, fmtDur(c.duration_sec)),
       el("span", { class: `play-ic${c.playable ? "" : " off"}`, "aria-label": c.playable ? "재생 가능" : "재생 불가" },
         playIcon())));
@@ -994,7 +994,7 @@
   function renderCall(d) {
     $("#call-avatar").textContent = d.agent_name.slice(0, 1);
     $("#call-title").textContent = d.customer_masked || "번호 없는 통화";
-    $("#call-sub").textContent = `${d.agent_name} 상담원 · ${dateTimeKo(d.started_at)}`;
+    $("#call-sub").textContent = `${d.agent_name} 에이전트 · ${dateTimeKo(d.started_at)}`;
 
     const player = $("#call-player");
     if (!d.play) {
@@ -1015,7 +1015,7 @@
     $("#call-facts").replaceChildren(
       row("통화 시작", dateTimeKo(d.started_at)),
       row("통화 시간", `${fmtDur(d.duration_sec)}${d.duration_estimated ? " (추정)" : ""}`),
-      row("상담원", `${d.agent_name}${d.extension ? ` · 내선 ${d.extension}` : ""}`),
+      row("에이전트", `${d.agent_name}${d.extension ? ` · 내선 ${d.extension}` : ""}`),
       row("고객번호", d.customer_masked || "없음"));
 
     const same = $("#call-same");
@@ -1068,7 +1068,7 @@
     box.replaceChildren(el("div", { class: `conn-status ${cls}` }, text),
       ...subs.map((s, i) => el("div", { class: `conn-sub${st.state === "error" && i === 0 ? " err" : ""}` }, s)));
   }
-  // ---------- 상담원별 업로드 · 슬랙 알림 ----------
+  // ---------- 에이전트별 업로드 · 슬랙 알림 ----------
   async function loadUploads() {
     try { renderUploads(await api("/api/uploads")); } catch (err) { toast(err.message); }
   }
@@ -1085,7 +1085,7 @@
         el("div", { class: "t" }, a.name),
         el("div", { class: "s" }, a.last_upload ? `마지막 업로드 ${fmtAgo(a.last_upload)}` : "아직 올린 녹취가 없어요")),
       el("span", { class: `tag ${a.missing ? "tag-fail" : "tag-done"}` }, a.missing ? "오늘 없음" : `오늘 ${fmtInt(a.today)}개`)))
-      : [el("li", { class: "empty" }, "상담원이 없어요")]));
+      : [el("li", { class: "empty" }, "에이전트가 없어요")]));
     const s = u.slack;
     $("#slack-box").hidden = !s;
     if (!s) return;
@@ -1116,7 +1116,7 @@
     const missing = (state.uploads?.agents || []).filter((a) => a.missing);
     const list = missing.length
       ? missing.map((a) => `• ${a.name} — ${a.last_upload ? `마지막 ${fmtAgo(a.last_upload)}` : "올린 적 없음"}`).join("\n")
-      : "오늘 모든 상담원이 녹취를 올렸어요.";
+      : "오늘 모든 에이전트가 녹취를 올렸어요.";
     const ok = await ask(missing.length ? `${fmtInt(missing.length)}명을 슬랙으로 알릴까요?` : "모두 올렸다고 알릴까요?",
       `받는 곳: ${s.target}\n\n${list}`, "보내기");
     if (!ok) return;
@@ -1150,7 +1150,7 @@
             el("div", { class: "s" }, a.pending ? "백업 대기 중 · 5분 안에 처리돼요"
               : a.waiting ? `백업 안 한 녹취 ${fmtInt(a.waiting)}개` : "모두 백업했어요")),
           a.pending ? el("span", { class: "tag tag-wait" }, "대기 중") : null));
-    }) : [el("li", { class: "empty" }, "상담원이 없어요")]));
+    }) : [el("li", { class: "empty" }, "에이전트가 없어요")]));
     const label = { pending: ["대기 중", "tag-wait"], done: ["완료", "tag-done"], failed: ["실패", "tag-fail"] };
     $("#backup-history").replaceChildren(...(o.history.length ? o.history.map((h) => el("li", {},
       el("div", { class: "main" },
@@ -1172,7 +1172,7 @@
     btn.disabled = !sel.length;
     btn.textContent = sel.length
       ? `선택한 ${fmtInt(sel.length)}명 백업 · 녹취 ${fmtInt(sel.reduce((n, a) => n + a.waiting, 0))}개`
-      : can.length ? "백업할 상담원을 골라 주세요" : "백업할 녹취가 없어요";
+      : can.length ? "백업할 에이전트를 골라 주세요" : "백업할 녹취가 없어요";
   }
   $("#backup-select-all").addEventListener("change", (e) => {
     const can = (state.backupOverview?.agents || []).filter(pickable);
@@ -1188,7 +1188,7 @@
     const lines = sel.map((a) => `• ${a.name} ${fmtInt(a.waiting)}개 → _백업/${a.name}`);
     const ok = await ask(`${names} · 녹취 ${fmtInt(n)}개를 옮길까요?`,
       [...lines, "",
-        "상담원 폴더에서 같은 드라이브의 _백업 폴더로 옮겨 폴더를 비워요. 지우지 않으니 계속 들을 수 있어요.",
+        "에이전트 폴더에서 같은 드라이브의 _백업 폴더로 옮겨 폴더를 비워요. 지우지 않으니 계속 들을 수 있어요.",
         "폴더에 대시보드에 아직 안 들어온 파일이 있으면 먼저 목록에 넣은 뒤 함께 옮겨요."].join("\n"),
       `${fmtInt(n)}개 옮기기`);
     if (!ok) return;
@@ -1265,7 +1265,7 @@
       row("마지막으로 가져온 시각", dateTimeKo(r.at)),
       row("새로 추가", `${fmtInt(r.added)}건`),
       row("이미 있던 녹취", `${fmtInt(r.already)}건`),
-      row("상담원 폴더", `${fmtInt(r.agents)}개`),
+      row("에이전트 폴더", `${fmtInt(r.agents)}개`),
       r.recent ? row("올라오는 중(다음에 가져옴)", `${fmtInt(r.recent)}개`) : null,
       r.failed_count ? el("div", { class: "fail-box" },
         `파일 이름에서 날짜·시간을 못 읽은 파일이 ${fmtInt(r.failed_count)}개 있어요`,

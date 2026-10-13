@@ -1,7 +1,7 @@
 """동기화 폴더의 녹취 파일을 읽어 통화 기록으로 적재한다.
 
-폴더 구조:  SYNC_ROOT/<상담원 이름>/.../<녹취 파일>
-- 최상위 폴더 이름 = 상담원 (처음 보는 이름이면 상담원을 자동 등록)
+폴더 구조:  SYNC_ROOT/<에이전트 이름>/.../<녹취 파일>
+- 최상위 폴더 이름 = 에이전트 (처음 보는 이름이면 에이전트를 자동 등록)
 - 파일 이름 = 고객 전화번호 + 통화 시작 일시
 - 통화시간 = 오디오 헤더의 재생 길이(없으면 파일 크기로 추정)
 
@@ -89,7 +89,7 @@ def customer_key(key: bytes, digits: str) -> str:
 
 
 def source_key(key: bytes, source: str) -> str:
-    """중복 적재 방지 키. 폴더 파일은 '<상담원>/<경로>', 드라이브 파일은 'drive:<파일 ID>'."""
+    """중복 적재 방지 키. 폴더 파일은 '<에이전트>/<경로>', 드라이브 파일은 'drive:<파일 ID>'."""
     return _hmac(key, "file:" + source)
 
 
@@ -157,7 +157,7 @@ _lock = threading.Lock()  # 자동 적재·수동 적재·백업 전 적재가 �
 
 
 def ingest_folder(conn: sqlite3.Connection, folder: Path, now: float | None = None) -> dict:
-    """상담원 폴더 하나를 적재. 이미 적재된 파일(source_key)은 건너뛴다."""
+    """에이전트 폴더 하나를 적재. 이미 적재된 파일(source_key)은 건너뛴다."""
     with _lock:
         return _ingest_folder(conn, folder, now)
 
@@ -207,7 +207,7 @@ MAX_RECORDS = 500
 
 
 def register_folders(conn: sqlite3.Connection, names: list) -> None:
-    """드라이브의 상담원 폴더 목록 — 녹취가 하나도 없는 폴더의 상담원도 '안 올림'으로 보이게 등록."""
+    """드라이브의 에이전트 폴더 목록 — 녹취가 하나도 없는 폴더의 에이전트도 '안 올림'으로 보이게 등록."""
     with _lock:
         for n in names[:200]:
             n = str(n or "").strip()
@@ -219,7 +219,7 @@ def register_folders(conn: sqlite3.Connection, names: list) -> None:
 def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = True) -> dict:
     """드라이브 파일 메타데이터로 통화 기록 적재.
 
-    record: {"id": 드라이브 파일 ID, "agent": 최상위 폴더(상담원) 이름, "name": 파일 이름,
+    record: {"id": 드라이브 파일 ID, "agent": 최상위 폴더(에이전트) 이름, "name": 파일 이름,
              "size": 바이트, "durationMs": 재생 길이(ms, 모르면 null), "created": 드라이브에 올라온 시각}
     first=False 면 이번 동기화의 이어지는 묶음이라 마지막 결과에 합산한다.
     """

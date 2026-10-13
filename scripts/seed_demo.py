@@ -1,7 +1,7 @@
 """데모 데이터 생성(개발용).
 
 - 과거 통화: 이미 적재·백업이 끝난 것으로 보고 DB에 직접 기록
-- 오늘 통화 일부: 실제 녹취 파일(WAV)을 SYNC_ROOT/<상담원 이름>/ 에 만들고 적재 과정을 그대로 거친다
+- 오늘 통화 일부: 실제 녹취 파일(WAV)을 SYNC_ROOT/<에이전트 이름>/ 에 만들고 적재 과정을 그대로 거친다
 - 사용자: admin / admin1234(관리자), viewer / viewer1234(조회)
 
 사용: python -m scripts.seed_demo [--reset]
@@ -31,7 +31,7 @@ def main() -> None:
     conn = connect(cfg.db_target)
     r = demo.seed(conn, cfg.sync_root, args.days)
     demo.create_demo_users(conn)
-    print(f"상담원 {r['agents']}명, 통화 {r['calls']}건(녹취 파일 {r['files']}개 포함)")
+    print(f"에이전트 {r['agents']}명, 통화 {r['calls']}건(녹취 파일 {r['files']}개 포함)")
     print(f"DB: {cfg.db_path}  녹취 폴더: {cfg.sync_root}")
     print("로그인: admin / admin1234 (관리자), viewer / viewer1234 (조회)")
 

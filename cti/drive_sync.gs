@@ -12,8 +12,8 @@
  *  실행 '나', 액세스 '회사의 모든 사용자'(또는 '모든 사용자') → 배포 → 나온 웹 앱 URL 을
  *  대시보드 설정에 붙여넣기.
  *
- *  대시보드에서 '백업하고 비우기'를 누르면, 다음 실행 때 그 상담원 폴더의 녹취를
- *  같은 폴더 안 '_백업/상담원' 폴더로 옮깁니다(지우지 않음, 계속 재생 가능).
+ *  대시보드에서 '백업하고 비우기'를 누르면, 다음 실행 때 그 에이전트 폴더의 녹취를
+ *  같은 폴더 안 '_백업/에이전트' 폴더로 옮깁니다(지우지 않음, 계속 재생 가능).
  */
 const CTI_URL = '{{CTI_URL}}';
 const CTI_TOKEN = '{{CTI_TOKEN}}';
@@ -22,7 +22,7 @@ const FOLDER_ID = '여기에_녹취_폴더_ID';
 const AUDIO = /\.(m4a|mp4|3gp|3ga|aac|mp3|wav|amr|ogg|opus|wma)$/i;
 const BATCH = 200;              // 한 번에 보내는 파일 수
 const TIME_BUDGET_MS = 270000;  // 실행 시간 제한(6분) 전에 끊고 다음 회차에 이어서
-const BACKUP_DIR = '_백업';      // 이름이 '_'로 시작하는 폴더는 상담원 폴더로 보지 않음
+const BACKUP_DIR = '_백업';      // 이름이 '_'로 시작하는 폴더는 에이전트 폴더로 보지 않음
 
 function 설치() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
@@ -131,7 +131,7 @@ function syncNew_(started, budget) {
   const props = PropertiesService.getScriptProperties();
   const since = props.getProperty('since');
   const files = [];
-  // 최상위 폴더 바로 아래 폴더 이름 = 상담원
+  // 최상위 폴더 바로 아래 폴더 이름 = 에이전트
   const dirs = agentFolders_();
   dirs.forEach(function (agentDir) {
     walk_(agentDir.id, agentDir.name, since, files);
@@ -143,7 +143,7 @@ function syncNew_(started, budget) {
     const chunk = files.slice(sent, sent + BATCH);
     chunk.forEach(function (f) { if (f.durationMs == null) f.durationMs = mp4DurationMs_(f.id, f.name); });
     const body = { files: chunk, first: first };
-    if (first) body.folders = dirs.map(function (d) { return d.name; });  // 녹취가 없는 상담원 폴더도 알림
+    if (first) body.folders = dirs.map(function (d) { return d.name; });  // 녹취가 없는 에이전트 폴더도 알림
     added += post_(body).added || 0;
     first = false;
     sent += chunk.length;
@@ -199,7 +199,7 @@ function backupOne_(t, started, budget) {
   const files = [];
   walk_(dir.id, t.agent, null, files);
   for (let i = 0; i < files.length; i += BATCH) post_({ files: files.slice(i, i + BATCH), first: false });
-  // 2) _백업/상담원 폴더로 옮기기
+  // 2) _백업/에이전트 폴더로 옮기기
   const dest = ensureFolder_(ensureFolder_(DriveApp.getFolderById(FOLDER_ID.trim()), BACKUP_DIR), t.agent);
   const moved = [];
   let failed = 0, lastError = null, done = true;

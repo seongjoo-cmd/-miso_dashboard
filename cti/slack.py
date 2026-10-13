@@ -1,4 +1,4 @@
-"""슬랙 봇으로 '녹취 안 올린 상담원' 알림 보내기.
+"""슬랙 봇으로 '녹취 안 올린 에이전트' 알림 보내기.
 
 봇 토큰(xoxb-…)은 환경 변수 SLACK_BOT_TOKEN 이 있으면 그것을, 없으면 설정 화면에서 넣은 값을 쓴다.
 받는 곳(slack_target):
@@ -112,11 +112,11 @@ def missing_message(agents: list[dict], today: date, now: datetime, url: str | N
     missing = [a for a in agents if a["missing"]]
     head = f"{today.month}월 {today.day}일({DOW[today.weekday()]}) {now:%H:%M} 기준"
     if missing:
-        title = f":warning: 오늘 녹취를 아직 안 올린 상담원 {len(missing)}명"
+        title = f":warning: 오늘 녹취를 아직 안 올린 에이전트 {len(missing)}명"
         lines = "\n".join(f"• *{a['name']}* — {_when(a['last_upload'], today)}" for a in missing)
     else:
-        title = ":white_check_mark: 오늘 모든 상담원이 녹취를 올렸어요"
-        lines = "\n".join(f"• {a['name']} — 오늘 {a['today']}개" for a in agents) or "상담원이 없어요"
+        title = ":white_check_mark: 오늘 모든 에이전트가 녹취를 올렸어요"
+        lines = "\n".join(f"• {a['name']} — 오늘 {a['today']}개" for a in agents) or "에이전트가 없어요"
     blocks = [
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*{title}*\n{head}"}},
         {"type": "section", "text": {"type": "mrkdwn", "text": lines}},

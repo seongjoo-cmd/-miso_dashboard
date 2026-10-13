@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
     active    INTEGER NOT NULL DEFAULT 1
 );
 
--- 아웃바운드 전용: 모든 통화는 상담원이 고객에게 건 발신 통화다.
+-- 아웃바운드 전용: 모든 통화는 에이전트가 고객에게 건 발신 통화다.
 -- 녹취 파일 1개 = 통화 1건. 고객 전화번호 원문은 저장하지 않는다(개인정보 최소화).
 CREATE TABLE IF NOT EXISTS calls (
     id               INTEGER PRIMARY KEY,
@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS calls (
     started_at       TEXT NOT NULL,  -- 로컬 시각 'YYYY-MM-DD HH:MM:SS'
     duration_sec     INTEGER NOT NULL DEFAULT 0,
     duration_source  TEXT,      -- 'header' | 'size'
-    source_key       TEXT UNIQUE,    -- '<상담원 폴더>/<파일 경로>'의 HMAC (중복 적재 방지, 파일명에 번호가 있어 원문 미저장)
+    source_key       TEXT UNIQUE,    -- '<에이전트 폴더>/<파일 경로>'의 HMAC (중복 적재 방지, 파일명에 번호가 있어 원문 미저장)
     file_bytes       INTEGER,
     drive_file_id    TEXT,            -- 구글 드라이브 파일 ID(재생용). 데모 녹취는 'demo'
     archived_at      TEXT,            -- 드라이브 '_백업' 폴더로 옮긴 시각(파일 ID는 그대로라 재생 가능)
