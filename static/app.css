@@ -352,6 +352,13 @@ h1, h2, h3, p { margin: 0; }
 
 /* ---------- 하단 탭 (모바일) ---------- */
 .tabbar { display: none; }
+.nav-item[hidden] { display: none !important; }
+.login-form .link-btn { justify-self: center; }
+.user-list .main { min-width: 0; }
+.user-list .t { overflow-wrap: anywhere; }
+.user-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.temp-pw { font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: var(--text-1); user-select: all; }
+@media (max-width: 560px) { .user-list li { flex-wrap: wrap; } .user-actions { width: 100%; justify-content: flex-start; padding-left: 52px; } }
 
 /* ---------- 상세 시트 ---------- */
 .backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .4); z-index: 30; animation: fade .2s; }

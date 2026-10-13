@@ -153,7 +153,26 @@
   };
 
   // ---------- 로그인 ----------
-  let setupMode = false;
+  let setupMode = false, signupMode = false;
+  function renderLoginMode() {
+    const newPw = setupMode || signupMode;
+    $("#login-title").replaceChildren(...(setupMode ? ["처음이시네요"] : signupMode ? ["회원가입"]
+      : [el("span", { class: "login-brand" }, "miso internet sales"), "통화 대시보드"]));
+    $("#login-sub").textContent = setupMode ? "저장소가 연결됐어요. 관리자 아이디와 비밀번호를 정해 주세요."
+      : signupMode ? "@getmiso.com 회사 이메일로 가입해요" : "아이디와 비밀번호를 입력해 주세요";
+    $("#username-label").textContent = signupMode ? "회사 이메일" : "아이디";
+    const name = $("#login-form [name=username]"), pw = $("#login-form [name=password]");
+    name.placeholder = signupMode ? "name@getmiso.com" : "";
+    name.type = signupMode ? "email" : "text";
+    pw.autocomplete = newPw ? "new-password" : "current-password";
+    pw.placeholder = newPw ? "8자 이상" : "";
+    $("#password2-row").hidden = !newPw;
+    $("#login-btn").textContent = setupMode ? "관리자 계정 만들고 시작하기" : signupMode ? "가입하고 시작하기" : "로그인";
+    $("#signup-toggle").hidden = setupMode;
+    $("#signup-toggle").textContent = signupMode ? "로그인으로 돌아가기" : "회원가입";
+    $("#login-error").textContent = "";
+  }
+  $("#signup-toggle").addEventListener("click", () => { signupMode = !signupMode; renderLoginMode(); });
   async function showLogin() {
     $("#app-view").hidden = true;
     $("#login-view").hidden = false;
@@ -167,12 +186,7 @@
       s.textContent = st.storage === "permanent" ? "저장소 연결됨"
         : st.storage === "temporary" ? "임시 저장소 · 데모 데이터" : "이 컴퓨터에 저장 중";
     } catch { setupMode = false; }
-    $("#login-title").replaceChildren(...(setupMode ? ["처음이시네요"]
-      : [el("span", { class: "login-brand" }, "miso internet sales"), "통화 대시보드"]));
-    $("#login-sub").textContent = setupMode ? "저장소가 연결됐어요. 관리자 아이디와 비밀번호를 정해 주세요." : "아이디와 비밀번호를 입력해 주세요";
-    $("#password2-row").hidden = !setupMode;
-    $("#login-btn").textContent = setupMode ? "관리자 계정 만들고 시작하기" : "로그인";
-    $("#login-form [name=password]").autocomplete = setupMode ? "new-password" : "current-password";
+    renderLoginMode();
   }
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -180,13 +194,14 @@
     const err = $("#login-error");
     err.textContent = "";
     if (!f.username || !f.password) { err.textContent = "아이디와 비밀번호를 모두 입력해 주세요."; return; }
-    if (setupMode && f.password !== f.password2) { err.textContent = "두 비밀번호가 달라요."; return; }
+    if ((setupMode || signupMode) && f.password !== f.password2) { err.textContent = "두 비밀번호가 달라요."; return; }
+    if (signupMode && !/@getmiso\.com$/i.test(f.username.trim())) { err.textContent = "@getmiso.com 이메일로만 가입할 수 있어요."; return; }
     const btn = e.target.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      state.user = await api(setupMode ? "/api/setup" : "/api/login",
+      state.user = await api(setupMode ? "/api/setup" : signupMode ? "/api/signup" : "/api/login",
         { method: "POST", body: JSON.stringify({ username: f.username, password: f.password }) });
-      setupMode = false;
+      setupMode = signupMode = false;
       e.target.reset();
       await startApp();
     } catch (ex) {
@@ -213,8 +228,9 @@
     const u = state.user;
     $("#user-initial").textContent = (u.username || "?").slice(0, 1).toUpperCase();
     $("#user-name").textContent = u.username;
-    $("#user-role").textContent = u.role === "admin" ? "관리자" : "조회 전용";
+    $("#user-role").textContent = u.role === "admin" ? "관리자" : "회원";
     $("#demo-badge").hidden = !u.demo;
+    $$('.nav-item[data-view="admin"]').forEach((a) => { a.hidden = u.role !== "admin"; });
     const agents = await api("/api/agents");
     agentOrder = agents.map((a) => a.id).sort((a, b) => a - b);
     const sel = $("#agent-filter");
@@ -237,12 +253,13 @@
   }
 
   // ---------- 메뉴 ----------
-  const VIEWS = ["calls", "stats", "settings"];
+  const VIEWS = ["calls", "stats", "settings", "admin"];
   let dashboardStale = true;
   let callsLoaded = false;
   async function route() {
     if (!state.user) return;
-    const view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "calls";
+    let view = VIEWS.includes(location.hash.slice(1)) ? location.hash.slice(1) : "calls";
+    if (view === "admin" && state.user.role !== "admin") view = "calls";
     $$(".nav-item").forEach((a) => {
       const on = a.dataset.view === view;
       a.classList.toggle("active", on);
@@ -251,6 +268,7 @@
     $("#calls-view").hidden = view !== "calls";
     $("#dashboard-view").hidden = view !== "stats";
     $("#settings-view").hidden = view !== "settings";
+    $("#admin-view").hidden = view !== "admin";
     closeSheet();
     closeCall();
     window.scrollTo(0, 0);
@@ -258,6 +276,8 @@
       if (!callsLoaded || dashboardStale) { callsLoaded = true; await loadCalls(); }
     } else if (view === "stats") {
       if (dashboardStale) { dashboardStale = false; await load(); }
+    } else if (view === "admin") {
+      await loadUsers();
     } else {
       await loadSettings();
     }
@@ -1217,6 +1237,72 @@
         ? "복사를 못 했어요. 브라우저의 클립보드 권한을 확인해 주세요." : err.message;
     }
   });
+  // ---------- 비밀번호 바꾸기 ----------
+  $("#password-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target)), msg = $("#password-msg");
+    msg.className = "form-msg err";
+    if (!f.current || !f.new) { msg.textContent = "비밀번호를 모두 입력해 주세요."; return; }
+    if (f.new !== f.new2) { msg.textContent = "새 비밀번호가 서로 달라요."; return; }
+    try {
+      await api("/api/me/password", { method: "POST", body: JSON.stringify({ current: f.current, new: f.new }) });
+      e.target.reset();
+      msg.className = "form-msg ok"; msg.textContent = "비밀번호를 바꿨어요.";
+    } catch (err) { msg.textContent = err.message; }
+  });
+
+  // ---------- 관리: 회원 관리 ----------
+  const tempPw = {};  // 방금 초기화한 회원의 임시 비밀번호(이 화면에만 보임)
+  async function loadUsers() {
+    let users;
+    try { users = await api("/api/users"); } catch (err) { toast(err.message); return; }
+    const me = state.user.id;
+    $("#users-list").replaceChildren(...users.map((u) => {
+      const locked = u.owner || u.id === me;
+      const isAdmin = u.role === "admin";
+      return el("li", {},
+        el("span", { class: "avatar" }, u.username.slice(0, 1).toUpperCase()),
+        el("div", { class: "main" },
+          el("div", { class: "t" }, u.username, u.id === me ? " (나)" : ""),
+          el("div", { class: "s" }, ...(tempPw[u.id]
+            ? ["임시 비밀번호 ", el("span", { class: "temp-pw" }, tempPw[u.id])]
+            : [isAdmin ? "관리자" : "회원"]))),
+        locked ? el("span", { class: `tag ${isAdmin ? "tag-wait" : "tag-done"}` }, isAdmin ? "관리자" : "회원")
+          : el("div", { class: "user-actions" },
+            el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: () => setRole(u, isAdmin ? "viewer" : "admin") },
+              isAdmin ? "회원으로" : "관리자로"),
+            el("button", { type: "button", class: "btn btn-secondary btn-sm", onclick: () => resetUser(u) }, "비밀번호 초기화"),
+            el("button", { type: "button", class: "btn btn-danger btn-sm", onclick: () => deleteUser(u) }, "탈퇴")));
+    }));
+  }
+  async function setRole(u, role) {
+    const label = role === "admin" ? "관리자" : "회원";
+    if (!await ask(`${label}로 바꿀까요?`, `${u.username} 님의 등급을 ${label}로 바꿔요.`, "바꾸기")) return;
+    try {
+      await api(`/api/users/${u.id}/role`, { method: "POST", body: JSON.stringify({ role }) });
+      toast(`${label}로 바꿨어요`);
+      loadUsers();
+    } catch (err) { toast(err.message); }
+  }
+  async function resetUser(u) {
+    if (!await ask("비밀번호를 초기화할까요?", `${u.username} 님은 임시 비밀번호로 다시 로그인해야 해요.`, "초기화하기")) return;
+    try {
+      const r = await api(`/api/users/${u.id}/reset`, { method: "POST", body: "{}" });
+      tempPw[u.id] = r.temp_password;
+      try { await navigator.clipboard.writeText(r.temp_password); toast("임시 비밀번호를 복사했어요"); } catch { toast("임시 비밀번호를 만들었어요"); }
+      loadUsers();
+    } catch (err) { toast(err.message); }
+  }
+  async function deleteUser(u) {
+    if (!await ask("탈퇴시킬까요?", `${u.username} 계정을 바로 지워요.`, "탈퇴시키기", true)) return;
+    try {
+      await api(`/api/users/${u.id}/delete`, { method: "POST", body: "{}" });
+      delete tempPw[u.id];
+      toast("탈퇴시켰어요");
+      loadUsers();
+    } catch (err) { toast(err.message); }
+  }
+
   async function loadSettings() {
     const isAdmin = state.user.role === "admin";
     $("#settings-msg").textContent = "";

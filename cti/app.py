@@ -317,7 +317,8 @@ def make_handler(cfg: Config):
             return self._send_json(200, {"added": s["added"], "already": s["already"]})
 
         def _login_response(self, conn, token: str):
-            user = {**auth.user_for_token(conn, token), "demo": cfg.demo}
+            user = auth.user_for_token(conn, token)
+            user = {**user, "demo": cfg.demo, "owner": auth.is_owner(user)}
             cookie = f"{COOKIE}={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200"
             if self.headers.get("X-Forwarded-Proto") == "https":
                 cookie += "; Secure"
@@ -355,6 +356,14 @@ def make_handler(cfg: Config):
                 auth.create_user(conn, name, pw, "admin")
                 return self._login_response(conn, auth.login(conn, name, pw))
 
+            if method == "POST" and path == "/api/signup":
+                body = self._read_json()
+                try:
+                    email = auth.signup(conn, str(body.get("username", "")), str(body.get("password", "")))
+                except auth.SignupError as e:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
+                return self._login_response(conn, auth.login(conn, email, str(body.get("password", ""))))
+
             if method == "POST" and path == "/api/drive/push":
                 return self._drive_push(conn)
             if method == "POST" and path == "/api/drive/run":
@@ -385,7 +394,33 @@ def make_handler(cfg: Config):
                 return self._send_json(200, {"ok": True},
                                        {"Set-Cookie": f"{COOKIE}=; Path=/; Max-Age=0"})
             if method == "GET" and path == "/api/me":
-                return self._send_json(200, {**user, "demo": cfg.demo})
+                return self._send_json(200, {**user, "demo": cfg.demo, "owner": auth.is_owner(user)})
+            if method == "POST" and path == "/api/me/password":
+                body = self._read_json()
+                try:
+                    auth.change_password(conn, user["id"], str(body.get("current", "")), str(body.get("new", "")))
+                except ValueError as e:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
+                return self._send_json(200, {"ok": True})
+            if path.startswith("/api/users"):
+                if user["role"] != "admin":
+                    raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 회원을 관리할 수 있어요.")
+                if method == "GET" and path == "/api/users":
+                    return self._send_json(200, auth.list_users(conn))
+                m = re.fullmatch(r"/api/users/(\d+)/(reset|delete|role)", path)
+                if m and method == "POST":
+                    uid, action = int(m.group(1)), m.group(2)
+                    try:
+                        if action == "reset":
+                            return self._send_json(200, {"temp_password": auth.reset_password(conn, user, uid)})
+                        if action == "role":
+                            auth.set_role(conn, user, uid, str(self._read_json().get("role", "")))
+                            return self._send_json(200, {"ok": True})
+                        return self._send_json(200, {"deleted": auth.delete_user(conn, user, uid)})
+                    except LookupError as e:
+                        raise ApiError(HTTPStatus.NOT_FOUND, str(e))
+                    except ValueError as e:
+                        raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
             if method == "GET" and path == "/api/agents":
                 rows = conn.execute(
                     "SELECT id, name, extension FROM agents WHERE active = 1 ORDER BY name").fetchall()

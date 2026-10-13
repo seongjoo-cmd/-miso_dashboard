@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261013-6">
+  <link rel="stylesheet" href="/static/app.css?v=20261013-7">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -29,7 +29,7 @@
         <p class="sub" id="login-sub">아이디와 비밀번호를 입력해 주세요</p>
       </div>
       <label class="input">
-        <span>아이디</span>
+        <span id="username-label">아이디</span>
         <input name="username" autocomplete="username" autocapitalize="off" required>
       </label>
       <label class="input">
@@ -42,6 +42,7 @@
       </label>
       <p id="login-error" class="form-error" role="alert"></p>
       <button type="submit" id="login-btn" class="btn btn-primary btn-lg btn-block">로그인</button>
+      <button type="button" id="signup-toggle" class="link-btn">회원가입</button>
       <p id="storage-status" class="storage-status"></p>
     </form>
   </section>
@@ -55,6 +56,7 @@
           <a class="nav-item" href="#calls" data-view="calls">녹취</a>
           <a class="nav-item" href="#stats" data-view="stats">통계</a>
           <a class="nav-item" href="#settings" data-view="settings">설정</a>
+          <a class="nav-item" href="#admin" data-view="admin" hidden>관리</a>
         </nav>
         <span id="demo-badge" class="pill pill-warn" hidden>데모 데이터</span>
         <button id="user-btn" class="avatar-btn" aria-haspopup="menu" aria-expanded="false">
@@ -299,6 +301,27 @@
         <p id="ingest-msg" class="form-msg" role="status"></p>
         <button type="button" id="ingest-now" class="btn btn-secondary btn-lg btn-block">지금 가져오기</button>
       </section>
+
+      <form id="password-form" class="card" novalidate>
+        <h2>비밀번호 바꾸기</h2>
+        <div class="field"><label for="pw-current">지금 비밀번호</label>
+          <input id="pw-current" name="current" class="text-input" type="password" autocomplete="current-password"></div>
+        <div class="field"><label for="pw-new">새 비밀번호</label>
+          <input id="pw-new" name="new" class="text-input" type="password" autocomplete="new-password" placeholder="8자 이상"></div>
+        <div class="field"><label for="pw-new2">새 비밀번호 한 번 더</label>
+          <input id="pw-new2" name="new2" class="text-input" type="password" autocomplete="new-password"></div>
+        <p id="password-msg" class="form-msg" role="status"></p>
+        <button type="submit" class="btn btn-secondary btn-lg btn-block">비밀번호 바꾸기</button>
+      </form>
+    </main>
+
+    <!-- 관리(회원 관리, 관리자만) -->
+    <main class="page page-narrow" id="admin-view" hidden>
+      <h1 class="page-title">관리</h1>
+      <section class="card">
+        <h2>회원 관리</h2>
+        <ul class="list user-list" id="users-list"></ul>
+      </section>
     </main>
 
     <!-- 모바일 하단 탭 -->
@@ -314,6 +337,10 @@
       <a class="tab nav-item" href="#settings" data-view="settings">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.3 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.3-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5-2.1-1.6ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
         <span>설정</span>
+      </a>
+      <a class="tab nav-item" href="#admin" data-view="admin" hidden>
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9 12a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0 2c3.3 0 7 1.6 7 4v2H2v-2c0-2.4 3.7-4 7-4Zm8-2a3 3 0 1 0 0-6v6Zm1.6 2.2c1.9.6 3.4 1.8 3.4 3.8v2h-4v-2c0-1.5-.6-2.8-1.6-3.8h2.2Z"/></svg>
+        <span>관리</span>
       </a>
     </nav>
   </div>
@@ -389,6 +416,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261013-6"></script>
+  <script src="/static/app.js?v=20261013-7"></script>
 </body>
 </html>
