@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from datetime import date
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
@@ -171,6 +172,49 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(d["play"]["type"], "drive")
         self.assertEqual(d["duration_sec"], 61)
         self.assertEqual(self.req("GET", "/api/calls?preset=all&q=123", token=v)[0], 400)
+
+    def test_drive_status_uploads_and_slack(self):
+        a = self.login("admin", "pw-admin")
+        v = self.login("viewer", "pw-viewer")
+        token = self.req("GET", "/api/drive/script", token=a)[1]["script"].split("const CTI_TOKEN = '")[1].split("'")[0]
+
+        def script(path, body):
+            c = HTTPConnection("127.0.0.1", self.port)
+            c.request("POST", path, json.dumps(body), {"Content-Type": "application/json", "X-CTI-Token": token})
+            r = c.getresponse(); data = json.loads(r.read()); c.close()
+            return r.status, data
+
+        # 스크립트가 회차 결과를 알리면 연결 상태가 바뀐다
+        self.assertEqual(script("/api/drive/run", {"ok": False, "error": "권한 없음"})[0], 200)
+        st = self.req("GET", "/api/drive/status", token=v)[1]
+        self.assertEqual((st["state"], st["last_run"]["error"]), ("error", "권한 없음"))
+        script("/api/drive/run", {"ok": True, "added": 2})
+        self.assertEqual(self.req("GET", "/api/drive/status", token=v)[1]["state"], "ok")
+
+        # 녹취 없는 상담원 폴더도 목록에 들어오고, 오늘 안 올린 사람으로 보인다
+        script("/api/drive/push", {"first": True, "files": [], "folders": ["빈폴더상담원"]})
+        u = self.req("GET", "/api/uploads", token=a)[1]
+        rows = {r["name"]: r for r in u["agents"]}
+        self.assertTrue(rows["빈폴더상담원"]["missing"])
+        self.assertFalse(rows["가"]["missing"])  # today=10-12 에 통화가 있음
+        self.assertEqual(u["slack"], {"token_set": False, "token_source": None, "target": ""})
+        self.assertNotIn("slack", self.req("GET", "/api/uploads", token=v)[1])
+
+        # 슬랙: 관리자만, 설정 없으면 알려 줌, 토큰은 응답에 안 나옴
+        self.assertEqual(self.req("POST", "/api/slack/config", {"target": "#x"}, token=v)[0], 403)
+        self.assertEqual(self.req("POST", "/api/slack/notify-missing", {}, token=v)[0], 403)
+        self.assertEqual(self.req("POST", "/api/slack/notify-missing", {}, token=a)[0], 502)
+        self.assertEqual(self.req("POST", "/api/slack/config", {"token": "bad"}, token=a)[0], 400)
+        status, c, _ = self.req("POST", "/api/slack/config",
+                                {"token": "xoxb-1-2-abcdefghijk", "target": "seongjoo@getmiso.com"}, token=a)
+        self.assertEqual((status, c["token_set"]), (200, True))
+        self.assertNotIn("xoxb", json.dumps(self.req("GET", "/api/uploads", token=a)[1]))
+        from cti import slack
+        with mock.patch.object(slack, "_call", side_effect=lambda t, m, p, post=False:
+                               {"ok": True, "user": {"id": "U1"}}):
+            status, r, _ = self.req("POST", "/api/slack/notify-missing", {}, token=a)
+        self.assertEqual((status, r["sent_to"]), (200, "seongjoo@getmiso.com"))
+        self.assertGreaterEqual(r["missing"], 1)
 
     def test_static_and_traversal(self):
         self.assertEqual(self.req("GET", "/")[0], 200)

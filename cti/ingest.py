@@ -94,16 +94,35 @@ def source_key(key: bytes, source: str) -> str:
 
 
 def _insert_call(conn, hk: bytes, agent_id: int, p: Parsed, sec: float, how: str,
-                 src_key: str, size: int | None, drive_file_id: str | None = None) -> None:
+                 src_key: str, size: int | None, drive_file_id: str | None = None,
+                 uploaded_at: str | None = None) -> None:
     conn.execute(
         """
         INSERT OR IGNORE INTO calls(agent_id, customer_key, customer_masked, started_at,
-                                    duration_sec, duration_source, source_key, file_bytes, drive_file_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    duration_sec, duration_source, source_key, file_bytes, drive_file_id,
+                                    uploaded_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (agent_id, customer_key(hk, p.phone) if p.phone else None, p.masked,
-         p.started_at.isoformat(sep=" "), round(sec), how, src_key, size, drive_file_id),
+         p.started_at.isoformat(sep=" "), round(sec), how, src_key, size, drive_file_id, uploaded_at),
     )
+
+
+def local_time(iso: str | None) -> str | None:
+    """드라이브 createdTime('2026-10-13T00:12:33.000Z') → 로컬 시각 'YYYY-MM-DD HH:MM:SS'."""
+    if not iso or not isinstance(iso, str):
+        return None
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt.isoformat(sep=" ", timespec="seconds")
+
+
+def _mtime_local(f: Path) -> str:
+    return datetime.fromtimestamp(f.stat().st_mtime).isoformat(sep=" ", timespec="seconds")
 
 
 def mask_name(name: str) -> str:
@@ -164,7 +183,7 @@ def _ingest_folder(conn: sqlite3.Connection, folder: Path, now: float | None) ->
             stats["failed"].append(mask_name(rel))
             continue
         sec, how = duration_sec(f, kbps)
-        _insert_call(conn, hk, agent_id, p, sec, how, key, f.stat().st_size)
+        _insert_call(conn, hk, agent_id, p, sec, how, key, f.stat().st_size, uploaded_at=_mtime_local(f))
         stats["added"] += 1
     conn.commit()
     return stats
@@ -187,11 +206,21 @@ def ingest_all(conn: sqlite3.Connection, sync_root: Path, now: float | None = No
 MAX_RECORDS = 500
 
 
+def register_folders(conn: sqlite3.Connection, names: list) -> None:
+    """드라이브의 상담원 폴더 목록 — 녹취가 하나도 없는 폴더의 상담원도 '안 올림'으로 보이게 등록."""
+    with _lock:
+        for n in names[:200]:
+            n = str(n or "").strip()
+            if n and not n.startswith("_"):
+                _agent_for_folder(conn, n)
+        conn.commit()
+
+
 def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = True) -> dict:
     """드라이브 파일 메타데이터로 통화 기록 적재.
 
     record: {"id": 드라이브 파일 ID, "agent": 최상위 폴더(상담원) 이름, "name": 파일 이름,
-             "size": 바이트, "durationMs": 재생 길이(ms, 모르면 null)}
+             "size": 바이트, "durationMs": 재생 길이(ms, 모르면 null), "created": 드라이브에 올라온 시각}
     first=False 면 이번 동기화의 이어지는 묶음이라 마지막 결과에 합산한다.
     """
     with _lock:
@@ -213,8 +242,12 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 agents[agent] = (aid, known)
             aid, known = agents[agent]
             key = source_key(hk, f"drive:{r['id']}")
+            uploaded = local_time(r.get("created"))
             if key in known:
                 stats["already"] += 1
+                if uploaded:  # 이 기능 전에 들어온 녹취: 다시 받을 때 올라온 시각을 채운다
+                    conn.execute("UPDATE calls SET uploaded_at = ? WHERE source_key = ? AND uploaded_at IS NULL",
+                                 (uploaded, key))
                 continue
             p = parse_filename(name)
             if p is None:
@@ -226,7 +259,7 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 sec, how = ms / 1000, "header"
             else:
                 sec, how = (size or 0) * 8 / (max(kbps, 1) * 1000), "size"
-            _insert_call(conn, hk, aid, p, sec, how, key, size, str(r["id"]))
+            _insert_call(conn, hk, aid, p, sec, how, key, size, str(r["id"]), uploaded)
             known.add(key)
             stats["added"] += 1
         stats["agents"] = len(agents)

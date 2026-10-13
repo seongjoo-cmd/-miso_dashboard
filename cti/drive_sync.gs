@@ -53,8 +53,15 @@ function 동기화(budgetMs) {
     try { result.backups = runBackups_(started, Math.min(BACKUP_BUDGET_MS, budget * 0.6)); }
     catch (e) { console.error('백업 처리 중 오류: ' + e); }
     // 2) 새 녹취 보내기
-    const s = syncNew_(started, budget);
+    let s;
+    try {
+      s = syncNew_(started, budget);
+    } catch (e) {
+      report_({ ok: false, error: String(e).slice(0, 300) });  // 대시보드 설정 화면에 '오류'로 보이게
+      throw e;
+    }
     result.added = s.added; result.found = s.found; result.sent = s.sent; result.more = s.sent < s.found;
+    report_({ ok: true, added: result.added, found: result.found, more: result.more });
     return result;
   } finally {
     lock.releaseLock();
@@ -125,7 +132,8 @@ function syncNew_(started, budget) {
   const since = props.getProperty('since');
   const files = [];
   // 최상위 폴더 바로 아래 폴더 이름 = 상담원
-  agentFolders_().forEach(function (agentDir) {
+  const dirs = agentFolders_();
+  dirs.forEach(function (agentDir) {
     walk_(agentDir.id, agentDir.name, since, files);
   });
   files.sort(function (a, b) { return a.created < b.created ? -1 : 1; });
@@ -134,7 +142,9 @@ function syncNew_(started, budget) {
   while (sent < files.length || first) {
     const chunk = files.slice(sent, sent + BATCH);
     chunk.forEach(function (f) { if (f.durationMs == null) f.durationMs = mp4DurationMs_(f.id, f.name); });
-    added += post_({ files: chunk, first: first }).added || 0;
+    const body = { files: chunk, first: first };
+    if (first) body.folders = dirs.map(function (d) { return d.name; });  // 녹취가 없는 상담원 폴더도 알림
+    added += post_(body).added || 0;
     first = false;
     sent += chunk.length;
     if (chunk.length) newest = chunk[chunk.length - 1].created;
@@ -290,6 +300,11 @@ function parseMvhd_(b) {
     }
   }
   return null;
+}
+
+/** 이번 회차 결과(성공·오류)를 대시보드에 알림 — 설정 화면의 연결 상태. 실패해도 동기화는 계속 */
+function report_(body) {
+  try { call_('post', '/api/drive/run', body); } catch (e) { console.error('결과 알리기 실패: ' + e); }
 }
 
 function post_(body) {

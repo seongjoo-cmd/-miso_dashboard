@@ -82,6 +82,20 @@
     return `${d.getMonth() + 1}월 ${d.getDate()}일 (${DOW[d.getDay()]}) ${p(d.getHours())}:${p(d.getMinutes())}`;
   };
 
+  /** 방금 / 3분 전 / 2시간 전 / 오늘·어제 18:20 / 10월 11일 (토) 09:12 */
+  const fmtAgo = (iso) => {
+    if (!iso) return "–";
+    const d = toDate(iso), min = Math.floor((Date.now() - d) / 60000);
+    if (min < 1) return "방금";
+    if (min < 60) return `${min}분 전`;
+    if (min < 6 * 60) return `${Math.floor(min / 60)}시간 전`;
+    const p = (x) => String(x).padStart(2, "0");
+    const y = new Date(); y.setDate(y.getDate() - 1);
+    if (d.toDateString() === new Date().toDateString()) return `오늘 ${p(d.getHours())}:${p(d.getMinutes())}`;
+    if (d.toDateString() === y.toDateString()) return `어제 ${p(d.getHours())}:${p(d.getMinutes())}`;
+    return dateTimeKo(iso);
+  };
+
   // ---------- API ----------
   async function api(path, opts = {}) {
     const res = await fetch(path, {
@@ -216,6 +230,7 @@
       state.webapp = !!st.drive_webapp_url; state.webappUrl = st.drive_webapp_url;
     } catch { state.minSec = 0; }
     updateSyncButton();
+    loadDriveStatus();
     dashboardStale = true;
     callsLoaded = false;
     await route();
@@ -726,6 +741,31 @@
     // 드라이브 연결일 때만. 웹 앱 주소가 없으면 관리자에게만 보여서 설정으로 안내
     $("#sync-now").hidden = state.source !== "drive" || (!state.webapp && state.user?.role !== "admin");
   }
+  // 드라이브 연결 상태 → [점 색, 한 줄 문구]. 녹취 화면과 설정 화면이 같이 쓴다
+  function driveStatusText(st) {
+    switch (st.state) {
+      case "never": return ["", "아직 드라이브와 연결되지 않았어요"];
+      case "error": return ["error", `동기화 오류 · ${fmtAgo(st.last_run?.at || st.last_seen)}`];
+      case "stale": return ["stale", `자동 동기화가 멈춘 것 같아요 · 마지막 ${fmtAgo(st.last_seen)}`];
+      default: return ["ok", `연결됨 · ${fmtAgo(st.last_seen)} 동기화`];
+    }
+  }
+  function renderSyncLine() {
+    const line = $("#sync-status"), st = state.driveStatus;
+    line.hidden = state.source !== "drive" || !st;
+    if (line.hidden) return;
+    const [cls, text] = driveStatusText(st);
+    line.className = `conn-status small ${cls}`;
+    line.textContent = st.state === "ok" ? `${text} · 5분마다 자동으로 가져와요` : text;
+  }
+  async function loadDriveStatus() {
+    if (state.source !== "drive") return;
+    try { state.driveStatus = await api("/api/drive/status"); } catch { return; }
+    renderSyncLine();
+    if (!$("#drive-card").hidden) renderDriveConn(state.driveStatus);
+  }
+  // 'N분 전'이 멈춰 있지 않게
+  setInterval(() => { if (state.driveStatus) renderSyncLine(); }, 30000);
   // 방식: server(대시보드 서버가 부름, '모든 사용자' 배포) | tab(새 탭에서 회사 계정으로, '회사의 모든 사용자' 배포)
   const MODE_KEY = "cti.syncMode";
   const getMode = () => { try { return localStorage.getItem(MODE_KEY); } catch { return null; } };
@@ -858,6 +898,7 @@
       cs.cursor = r.next_cursor; cs.total = r.total; cs.byCustomer = r.by_customer;
       cs.error = null;
       renderCalls();
+      loadDriveStatus();
     } catch (err) {
       if (seq !== cs.seq) return;
       cs.error = err.message; cs.items = []; cs.cursor = null; cs.total = 0;
@@ -990,7 +1031,7 @@
 
   // ---------- 설정 ----------
   const SETTING_FIELDS = [
-    { key: "min_call_sec", input: "#min-call-sec", min: 0, max: 600, label: "최소 통화시간" },
+    { key: "min_call_sec", input: "#min-call-sec", min: 0, max: 600, label: "짧은 통화 기준" },
     { key: "fallback_kbps", input: "#fallback-kbps", min: 8, max: 512, label: "비트레이트" },
   ];
   function fillSettings(s) {
@@ -1005,7 +1046,87 @@
     if (drive && state.user.role === "admin") loadDriveBackup();
     $("#ingest-now").hidden = drive || state.user.role !== "admin";
     $("#ingest-card h2").textContent = drive ? "드라이브에서 받은 녹취" : "녹취 가져오기";
+    loadUploads();
   }
+  function renderDriveConn(st) {
+    const box = $("#drive-status");
+    box.hidden = !st;
+    if (!st) return;
+    const [cls, text] = driveStatusText(st);
+    const run = st.last_run;
+    const subs = [];
+    if (st.state === "never") subs.push("아래 순서대로 스크립트를 설치하면 5분 안에 '연결됨'으로 바뀌어요.");
+    if (st.state === "ok" && run?.ok) {
+      subs.push(run.added ? `지난번에 새 녹취 ${fmtInt(run.added)}건을 가져왔어요${run.more ? " · 남은 건 이어서 가져와요" : ""}`
+        : "지난번에는 새 녹취가 없었어요");
+    }
+    if (st.state === "stale") subs.push(`5분마다 와야 하는데 ${st.stale_min}분 넘게 소식이 없어요. script.google.com 에서 '설치'를 다시 실행해 주세요.`);
+    if (st.state === "error") {
+      subs.push(run?.error || "알 수 없는 오류");
+      if (st.last_ok) subs.push(`마지막으로 성공한 동기화 · ${fmtAgo(st.last_ok)}`);
+    }
+    box.replaceChildren(el("div", { class: `conn-status ${cls}` }, text),
+      ...subs.map((s, i) => el("div", { class: `conn-sub${st.state === "error" && i === 0 ? " err" : ""}` }, s)));
+  }
+  // ---------- 상담원별 업로드 · 슬랙 알림 ----------
+  async function loadUploads() {
+    try { renderUploads(await api("/api/uploads")); } catch (err) { toast(err.message); }
+  }
+  function renderUploads(u) {
+    state.uploads = u;
+    $("#uploads-card").hidden = false;
+    if (u.drive) {
+      state.driveStatus = u.drive; renderSyncLine();
+      if (!$("#drive-card").hidden) renderDriveConn(u.drive);
+    }
+    $("#uploads-list").replaceChildren(...(u.agents.length ? u.agents.map((a) => el("li", {},
+      el("span", { class: "avatar" }, a.name.slice(0, 1)),
+      el("div", { class: "main" },
+        el("div", { class: "t" }, a.name),
+        el("div", { class: "s" }, a.last_upload ? `마지막 업로드 ${fmtAgo(a.last_upload)}` : "아직 올린 녹취가 없어요")),
+      el("span", { class: `tag ${a.missing ? "tag-fail" : "tag-done"}` }, a.missing ? "오늘 없음" : `오늘 ${fmtInt(a.today)}개`)))
+      : [el("li", { class: "empty" }, "상담원이 없어요")]));
+    const s = u.slack;
+    $("#slack-box").hidden = !s;
+    if (!s) return;
+    if (document.activeElement !== $("#slack-target")) $("#slack-target").value = s.target;
+    $("#slack-token").value = "";
+    $("#slack-token").placeholder = s.token_set ? "저장돼 있어요 · 바꿀 때만 새로 넣으세요" : "xoxb-…";
+    $("#slack-token").disabled = s.token_source === "env";
+    $("#slack-token-help").textContent = s.token_source === "env"
+      ? "서버 환경 변수(SLACK_BOT_TOKEN)의 토큰을 쓰고 있어요."
+      : "슬랙 앱의 Bot User OAuth Token 이에요. 권한: chat:write, users:read, users:read.email";
+    const n = u.agents.filter((a) => a.missing).length;
+    $("#slack-notify").textContent = n ? `오늘 안 올린 ${fmtInt(n)}명 슬랙으로 알리기` : "모두 올렸어요 · 슬랙으로 알리기";
+  }
+  $("#slack-save").addEventListener("click", async () => {
+    const msg = $("#slack-msg"), body = { target: $("#slack-target").value.trim() };
+    const tok = $("#slack-token").value.trim();
+    if (tok) body.token = tok;
+    try {
+      const s = await api("/api/slack/config", { method: "POST", body: JSON.stringify(body) });
+      renderUploads({ ...state.uploads, slack: s });
+      msg.className = "form-msg ok"; msg.textContent = "저장했어요.";
+    } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+  });
+  $("#slack-notify").addEventListener("click", async () => {
+    const msg = $("#slack-msg"), btn = $("#slack-notify");
+    const s = state.uploads?.slack;
+    if (!s?.token_set || !s.target) { msg.className = "form-msg err"; msg.textContent = "받는 곳과 봇 토큰을 먼저 저장해 주세요."; return; }
+    const missing = (state.uploads?.agents || []).filter((a) => a.missing);
+    const list = missing.length
+      ? missing.map((a) => `• ${a.name} — ${a.last_upload ? `마지막 ${fmtAgo(a.last_upload)}` : "올린 적 없음"}`).join("\n")
+      : "오늘 모든 상담원이 녹취를 올렸어요.";
+    const ok = await ask(missing.length ? `${fmtInt(missing.length)}명을 슬랙으로 알릴까요?` : "모두 올렸다고 알릴까요?",
+      `받는 곳: ${s.target}\n\n${list}`, "보내기");
+    if (!ok) return;
+    btn.disabled = true; msg.className = "form-msg"; msg.textContent = "보내는 중이에요…";
+    try {
+      const r = await api("/api/slack/notify-missing", { method: "POST", body: "{}" });
+      msg.className = "form-msg ok"; msg.textContent = `${r.sent_to} 로 보냈어요.`;
+    } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    finally { btn.disabled = false; }
+  });
   // ---------- 드라이브 녹취 백업 ----------
   async function loadDriveBackup() {
     try { renderDriveBackup(await api("/api/drive/backup")); } catch (err) { toast(err.message); }
@@ -1064,8 +1185,12 @@
     if (!sel.length) return;
     const n = sel.reduce((s, a) => s + a.waiting, 0);
     const names = sel.length <= 3 ? sel.map((a) => a.name).join(", ") : `${sel[0].name} 외 ${sel.length - 1}명`;
-    const ok = await ask(`${names} · 녹취 ${fmtInt(n)}개를 백업할까요?`,
-      "드라이브의 _백업 폴더로 옮겨서 상담원 폴더를 비워요. 지우지 않으니 계속 들을 수 있어요.", "백업하기");
+    const lines = sel.map((a) => `• ${a.name} ${fmtInt(a.waiting)}개 → _백업/${a.name}`);
+    const ok = await ask(`${names} · 녹취 ${fmtInt(n)}개를 옮길까요?`,
+      [...lines, "",
+        "상담원 폴더에서 같은 드라이브의 _백업 폴더로 옮겨 폴더를 비워요. 지우지 않으니 계속 들을 수 있어요.",
+        "폴더에 대시보드에 아직 안 들어온 파일이 있으면 먼저 목록에 넣은 뒤 함께 옮겨요."].join("\n"),
+      `${fmtInt(n)}개 옮기기`);
     if (!ok) return;
     try {
       const r = await api("/api/drive/backup", { method: "POST", body: JSON.stringify({ agent_ids: sel.map((a) => a.agent_id) }) });

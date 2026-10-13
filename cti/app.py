@@ -22,14 +22,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import auth, backup, calls, dashboard, demo, drive_backup, ingest
+from . import auth, backup, calls, dashboard, demo, drive_backup, ingest, slack, uploads
 from .db import connect, get_setting, get_setting_int, set_setting
 from .periods import PRESETS, resolve
 
@@ -303,10 +303,13 @@ def make_handler(cfg: Config):
             sent = self.headers.get("X-CTI-Token", "")
             if not sent or not hmac.compare_digest(sent, drive_token(conn)):
                 raise ApiError(HTTPStatus.UNAUTHORIZED, "연동 키가 맞지 않아요. 설정 화면의 스크립트를 다시 복사해 주세요.")
+            uploads.touch(conn)  # 연결 상태: 스크립트가 마지막으로 들른 시각
 
         def _drive_push(self, conn):
             self._check_drive_token(conn)
             body = self._read_json()
+            if isinstance(body.get("folders"), list):
+                ingest.register_folders(conn, body["folders"])
             files = body.get("files")
             if not isinstance(files, list) or len(files) > ingest.MAX_RECORDS:
                 raise ApiError(HTTPStatus.BAD_REQUEST, f"files 는 {ingest.MAX_RECORDS}개 이하 목록이어야 해요.")
@@ -354,6 +357,9 @@ def make_handler(cfg: Config):
 
             if method == "POST" and path == "/api/drive/push":
                 return self._drive_push(conn)
+            if method == "POST" and path == "/api/drive/run":
+                self._check_drive_token(conn)
+                return self._send_json(200, uploads.record_run(conn, self._read_json()))
             if path == "/api/drive/tasks" and method == "GET":
                 self._check_drive_token(conn)
                 return self._send_json(200, {"tasks": drive_backup.pending(conn)})
@@ -415,6 +421,33 @@ def make_handler(cfg: Config):
                 set_setting(conn, "drive_webapp_url", url)
                 conn.commit()
                 return self._send_json(200, _settings_payload(conn))
+            if method == "GET" and path == "/api/drive/status":
+                return self._send_json(200, uploads.drive_status(conn))
+            if method == "GET" and path == "/api/uploads":
+                out = {"drive": uploads.drive_status(conn) if SOURCE == "drive" else None,
+                       "agents": uploads.agent_uploads(conn, cfg.today())}
+                if user["role"] == "admin":
+                    out["slack"] = slack.config(conn)
+                return self._send_json(200, out)
+            if method == "POST" and path == "/api/slack/config":
+                if user["role"] != "admin":
+                    raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 바꿀 수 있어요.")
+                try:
+                    return self._send_json(200, slack.save_config(conn, self._read_json()))
+                except ValueError as e:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
+            if method == "POST" and path == "/api/slack/notify-missing":
+                if user["role"] != "admin":
+                    raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 보낼 수 있어요.")
+                self._read_json()
+                today = cfg.today()
+                agents = uploads.agent_uploads(conn, today)
+                text, blocks = slack.missing_message(agents, today, datetime.now(), self._base_url())
+                try:
+                    r = slack.send(conn, text, blocks)
+                except slack.SlackError as e:
+                    raise ApiError(HTTPStatus.BAD_GATEWAY, str(e))
+                return self._send_json(200, {**r, "missing": sum(a["missing"] for a in agents)})
             if method == "POST" and path == "/api/drive/sync-now":
                 self._read_json()
                 return self._send_json(200, drive_sync_now(conn))

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS calls (
     source_key       TEXT UNIQUE,    -- '<상담원 폴더>/<파일 경로>'의 HMAC (중복 적재 방지, 파일명에 번호가 있어 원문 미저장)
     file_bytes       INTEGER,
     drive_file_id    TEXT,            -- 구글 드라이브 파일 ID(재생용). 데모 녹취는 'demo'
-    archived_at      TEXT             -- 드라이브 '_백업' 폴더로 옮긴 시각(파일 ID는 그대로라 재생 가능)
+    archived_at      TEXT,            -- 드라이브 '_백업' 폴더로 옮긴 시각(파일 ID는 그대로라 재생 가능)
+    uploaded_at      TEXT             -- 녹취 파일이 폴더에 올라온 시각(드라이브 생성 시각·폴더 파일 수정 시각, 로컬 시각)
 );
 CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at);
 CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls(agent_id, started_at);
@@ -169,7 +170,8 @@ def connect(target):
 
 
 # 이미 만들어진 DB에 나중에 추가된 열: (테이블, 열, 타입)
-_ADDED_COLUMNS = [("calls", "drive_file_id", "TEXT"), ("calls", "archived_at", "TEXT")]
+_ADDED_COLUMNS = [("calls", "drive_file_id", "TEXT"), ("calls", "archived_at", "TEXT"),
+                  ("calls", "uploaded_at", "TEXT")]
 
 
 def _migrate(conn) -> None:

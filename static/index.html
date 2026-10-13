@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261012-10">
+  <link rel="stylesheet" href="/static/app.css?v=20261013-4">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -80,6 +80,7 @@
             <button type="button" class="link-btn" id="lookup-reset">초기화</button>
           </div>
         </div>
+        <p class="conn-status small" id="sync-status" hidden></p>
 
         <div class="lk-row">
           <span class="lk-label">날짜</span>
@@ -236,6 +237,7 @@
 
       <section class="card" id="drive-card" hidden>
         <h2>구글 드라이브 연결</h2>
+        <div class="conn-box" id="drive-status" hidden></div>
         <div class="field">
           <label for="drive-folder">녹취 폴더 주소</label>
           <input id="drive-folder" class="text-input" type="url" inputmode="url" autocomplete="off"
@@ -273,6 +275,30 @@
         <button type="button" id="backup-selected" class="btn btn-primary btn-lg btn-block" disabled>백업할 상담원을 골라 주세요</button>
         <h3 class="sub-h">백업 기록</h3>
         <ul class="list" id="backup-history"></ul>
+      </section>
+
+      <section class="card" id="uploads-card" hidden>
+        <h2>상담원별 녹취 업로드</h2>
+        <p class="help">녹취 파일이 상담원 폴더에 마지막으로 올라온 시각이에요. 오늘 하나도 안 올린 상담원이 위에 보여요.</p>
+        <ul class="list" id="uploads-list"></ul>
+        <div id="slack-box" hidden>
+          <h3 class="sub-h">슬랙 알림</h3>
+          <p class="help" style="margin-bottom:16px">오늘 안 올린 상담원 명단을 슬랙 봇이 보내요. 받는 곳에 내 슬랙 이메일을 넣으면 나에게 DM 으로 와요.</p>
+          <div class="field">
+            <label for="slack-target">받는 곳</label>
+            <input id="slack-target" class="text-input" type="text" autocomplete="off" placeholder="슬랙 이메일, 사용자 ID(U…), #채널">
+          </div>
+          <div class="field">
+            <label for="slack-token">봇 토큰</label>
+            <input id="slack-token" class="text-input" type="password" autocomplete="off" placeholder="xoxb-…">
+            <p class="help" id="slack-token-help"></p>
+          </div>
+          <p id="slack-msg" class="form-msg" role="status"></p>
+          <div class="btn-stack">
+            <button type="button" id="slack-save" class="btn btn-secondary btn-lg btn-block">슬랙 설정 저장</button>
+            <button type="button" id="slack-notify" class="btn btn-primary btn-lg btn-block">안 올린 상담원 슬랙으로 알리기</button>
+          </div>
+        </div>
       </section>
 
       <section class="card" id="ingest-card">
@@ -372,6 +398,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261013-3"></script>
+  <script src="/static/app.js?v=20261013-4"></script>
 </body>
 </html>

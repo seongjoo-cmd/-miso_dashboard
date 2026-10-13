@@ -454,3 +454,18 @@ h1, h2, h3, p { margin: 0; }
   .sheet, .btn { transition: none; }
   .backdrop, .toast { animation: none; }
 }
+
+/* 드라이브 연결 상태 · 업로드 현황 */
+.conn-status { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; color: var(--text-2); }
+.conn-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); flex: none; }
+.conn-status.ok::before { background: var(--ok); }
+.conn-status.stale::before { background: #ff9f1c; }
+.conn-status.error::before { background: var(--danger); }
+.conn-status.small { font-size: 13px; font-weight: 500; color: var(--text-3); margin: -2px 0 8px; }
+.conn-box { background: var(--fill); border-radius: var(--radius-sm); padding: 14px 16px; margin: 4px 0 20px; display: grid; gap: 4px; }
+.conn-box .conn-sub { font-size: 13px; color: var(--text-3); padding-left: 16px; }
+.conn-box .conn-sub.err { color: var(--danger); word-break: break-all; }
+#uploads-list .main { flex: 1; min-width: 0; }
+#uploads-list .t { font-weight: 600; }
+#uploads-list .s { font-size: 13px; color: var(--text-3); }
+.btn-stack { display: grid; gap: 8px; }
