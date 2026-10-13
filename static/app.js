@@ -510,7 +510,6 @@
 
   // ---------- 일별 처리건수(히트맵) ----------
   function renderMatrix(m) {
-    $("#matrix-caption").textContent = "짧은 통화까지 모두 셌어요 · 진할수록 많아요";
     const thead = el("thead", {}, el("tr", {},
       el("th", { class: "name" }, ""),
       m.dates.map((d) => el("th", { class: isWeekend(d) ? "weekend" : null, title: d }, md(d), el("span", { class: "dow" }, dow(d)))),
