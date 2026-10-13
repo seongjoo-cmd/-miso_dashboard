@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261013-5">
+  <link rel="stylesheet" href="/static/app.css?v=20261013-6">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -189,7 +189,6 @@
           <div class="card-head">
             <div>
               <h2>에이전트 순위</h2>
-              <p class="caption">누르면 상세를 볼 수 있어요</p>
             </div>
           </div>
           <div class="seg" id="rank-sort" role="tablist" aria-label="정렬 기준"></div>
@@ -220,7 +219,6 @@
             <input type="number" id="min-call-sec" min="0" max="600" step="1" inputmode="numeric">
             <span>초</span>
           </div>
-          <p class="help">이 시간 미만이면 짧은 통화로 분류돼요(짧은 통화 비율, 통화 목록의 '짧은 통화 빼기'). 처리 건수와 평균 통화시간은 짧은 통화도 포함해 셉니다.</p>
         </div>
         <div class="field">
           <label for="fallback-kbps">파일 크기로 통화시간 추정할 때 비트레이트</label>
@@ -228,7 +226,6 @@
             <input type="number" id="fallback-kbps" min="8" max="512" step="1" inputmode="numeric">
             <span>kbps</span>
           </div>
-          <p class="help">녹취 파일에서 길이를 바로 읽지 못할 때만 써요.</p>
         </div>
         <p id="settings-readonly" class="notice" hidden>관리자만 바꿀 수 있어요.</p>
         <p id="settings-msg" class="form-msg" role="status"></p>
@@ -242,12 +239,11 @@
           <label for="drive-folder">녹취 폴더 주소</label>
           <input id="drive-folder" class="text-input" type="url" inputmode="url" autocomplete="off"
                  placeholder="https://drive.google.com/drive/folders/…">
-          <p class="help">구글 드라이브에서 녹취 폴더를 열었을 때의 주소를 붙여넣으세요.</p>
         </div>
         <ol class="steps">
-          <li><b>스크립트 복사</b>를 누르세요. 대시보드 주소·연동 키·폴더가 모두 들어 있어요.</li>
+          <li><b>스크립트 복사</b>를 누르세요.</li>
           <li>녹취 폴더가 보이는 <b>회사 구글 계정</b>으로 <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com 새 프로젝트</a>를 열고, 있던 내용을 지운 뒤 붙여넣고 저장(💾)하세요.</li>
-          <li>위쪽 함수 목록에서 <b>설치</b>를 고르고 <b>실행</b> → 권한 허용. 끝이에요. 이후 5분마다 새 녹취가 들어와요.</li>
+          <li>위쪽 함수 목록에서 <b>설치</b>를 고르고 <b>실행</b> → 권한 허용</li>
         </ol>
         <p id="drive-msg" class="form-msg" role="status"></p>
         <button type="button" id="drive-copy" class="btn btn-primary btn-lg btn-block">스크립트 복사</button>
@@ -255,8 +251,8 @@
         <h3 class="sub-h">[동기화] 버튼 켜기 (선택)</h3>
         <ol class="steps">
           <li>스크립트 화면 오른쪽 위 <b>배포 → 새 배포</b> → 톱니바퀴에서 <b>웹 앱</b> 선택</li>
-          <li>다음 사용자 인증 정보로 실행: <b>나</b> · 액세스 권한: <b>회사(Miso, Inc.)의 모든 사용자</b> → <b>배포</b><br><span class="muted">[동기화]를 누르면 새 탭이 열려 회사 계정으로 동기화해요. '모든 사용자'로 배포하면 탭 없이 바로 돼요.</span></li>
-          <li>나온 <b>웹 앱 URL</b>을 아래에 붙여넣고 저장하세요. 녹취 화면에 [동기화] 버튼이 생겨요.</li>
+          <li>다음 사용자 인증 정보로 실행: <b>나</b> · 액세스 권한: <b>회사(Miso, Inc.)의 모든 사용자</b> → <b>배포</b></li>
+          <li>나온 <b>웹 앱 URL</b>을 아래에 붙여넣고 저장하세요.</li>
         </ol>
         <div class="field">
           <input id="webapp-url" class="text-input" type="url" inputmode="url" autocomplete="off"
@@ -264,12 +260,10 @@
         </div>
         <p id="webapp-msg" class="form-msg" role="status"></p>
         <button type="button" id="webapp-save" class="btn btn-secondary btn-lg btn-block">웹 앱 주소 저장</button>
-        <p class="help" style="margin-top:12px">연동 키는 비밀번호처럼 다뤄 주세요. 녹취 파일은 드라이브에 그대로 있고, 대시보드에는 목록 정보만 들어와요.</p>
       </section>
 
       <section class="card" id="backup-card" hidden>
         <h2>녹취 백업</h2>
-        <p class="help">에이전트 폴더의 녹취를 같은 드라이브의 <b>_백업</b> 폴더로 옮겨 폴더를 비워요. 지우지 않아서 백업한 녹취도 계속 조회하고 들을 수 있어요. 누르면 5분 안에 처리돼요.</p>
         <label class="lk-check sel-all"><input type="checkbox" id="backup-select-all"> 전체 선택</label>
         <ul class="list pick-list" id="backup-agents"></ul>
         <button type="button" id="backup-selected" class="btn btn-primary btn-lg btn-block" disabled>백업할 에이전트를 골라 주세요</button>
@@ -279,11 +273,9 @@
 
       <section class="card" id="uploads-card" hidden>
         <h2>에이전트별 녹취 업로드</h2>
-        <p class="help">녹취 파일이 에이전트 폴더에 마지막으로 올라온 시각이에요. 오늘 하나도 안 올린 에이전트가 위에 보여요.</p>
         <ul class="list" id="uploads-list"></ul>
         <div id="slack-box" hidden>
           <h3 class="sub-h">슬랙 알림</h3>
-          <p class="help" style="margin-bottom:16px">오늘 안 올린 에이전트 명단을 슬랙 봇이 보내요. 받는 곳에 내 슬랙 이메일을 넣으면 나에게 DM 으로 와요.</p>
           <div class="field">
             <label for="slack-target">받는 곳</label>
             <input id="slack-target" class="text-input" type="text" autocomplete="off" placeholder="슬랙 이메일, 사용자 ID(U…), #채널">
@@ -303,7 +295,6 @@
 
       <section class="card" id="ingest-card">
         <h2>녹취 가져오기</h2>
-        <p class="help">녹취 폴더의 <b>에이전트 이름 폴더</b> 안에 있는 파일 이름에서 고객번호와 통화 시작 시각을 읽어요. 고객번호는 가운데를 가려서 저장해요.</p>
         <div id="ingest-status" class="status-list"></div>
         <p id="ingest-msg" class="form-msg" role="status"></p>
         <button type="button" id="ingest-now" class="btn btn-secondary btn-lg btn-block">지금 가져오기</button>
@@ -398,6 +389,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261013-5"></script>
+  <script src="/static/app.js?v=20261013-6"></script>
 </body>
 </html>

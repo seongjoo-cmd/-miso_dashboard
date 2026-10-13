@@ -424,7 +424,7 @@
     const single = n === 1;
     $("#trend-caption").textContent = single
       ? `${md(t.dates[0])} (${dow(t.dates[0])}) 하루 ${fmtInt(total)}건`
-      : `하루 평균 ${fmtInt(Math.round(total / n))}건 · 에이전트를 누르면 비교해요`;
+      : `하루 평균 ${fmtInt(Math.round(total / n))}건`;
     $("#trend-box").hidden = single;
     $("#trend-empty").hidden = !single;
     if (single) {
@@ -756,7 +756,7 @@
     if (line.hidden) return;
     const [cls, text] = driveStatusText(st);
     line.className = `conn-status small ${cls}`;
-    line.textContent = st.state === "ok" ? `${text} · 5분마다 자동으로 가져와요` : text;
+    line.textContent = text;
   }
   async function loadDriveStatus() {
     if (state.source !== "drive") return;
@@ -1055,12 +1055,11 @@
     const [cls, text] = driveStatusText(st);
     const run = st.last_run;
     const subs = [];
-    if (st.state === "never") subs.push("아래 순서대로 스크립트를 설치하면 5분 안에 '연결됨'으로 바뀌어요.");
     if (st.state === "ok" && run?.ok) {
       subs.push(run.added ? `지난번에 새 녹취 ${fmtInt(run.added)}건을 가져왔어요${run.more ? " · 남은 건 이어서 가져와요" : ""}`
         : "지난번에는 새 녹취가 없었어요");
     }
-    if (st.state === "stale") subs.push(`5분마다 와야 하는데 ${st.stale_min}분 넘게 소식이 없어요. script.google.com 에서 '설치'를 다시 실행해 주세요.`);
+    if (st.state === "stale") subs.push(`${st.stale_min}분 넘게 소식이 없어요. script.google.com 에서 '설치'를 다시 실행해 주세요.`);
     if (st.state === "error") {
       subs.push(run?.error || "알 수 없는 오류");
       if (st.last_ok) subs.push(`마지막으로 성공한 동기화 · ${fmtAgo(st.last_ok)}`);
@@ -1147,7 +1146,7 @@
           el("span", { class: "avatar" }, a.name.slice(0, 1)),
           el("div", { class: "main" },
             el("div", { class: "t" }, a.name),
-            el("div", { class: "s" }, a.pending ? "백업 대기 중 · 5분 안에 처리돼요"
+            el("div", { class: "s" }, a.pending ? "백업 대기 중"
               : a.waiting ? `백업 안 한 녹취 ${fmtInt(a.waiting)}개` : "모두 백업했어요")),
           a.pending ? el("span", { class: "tag tag-wait" }, "대기 중") : null));
     }) : [el("li", { class: "empty" }, "에이전트가 없어요")]));
@@ -1196,7 +1195,7 @@
       const r = await api("/api/drive/backup", { method: "POST", body: JSON.stringify({ agent_ids: sel.map((a) => a.agent_id) }) });
       picked.clear();
       renderDriveBackup(r);
-      toast(`${fmtInt(r.requested)}명 백업을 요청했어요. 5분 안에 처리돼요.`);
+      toast(`${fmtInt(r.requested)}명 백업을 요청했어요`);
     } catch (err) { toast(err.message); }
   });
 
