@@ -1,8 +1,8 @@
 """대시보드 집계 쿼리.
 
 용어
-- 처리 건수: duration_sec >= min_call_sec 인 통화 수
-- ATT(Average Talk Time): 처리 건수 기준 통화의 duration_sec 평균
+- 처리 건수: 짧은 통화를 포함한 전체 통화 수
+- ATT(Average Talk Time): 전체 통화의 duration_sec 평균
 - 짧은 통화 비율: duration_sec < min_call_sec 인 통화 / 전체 통화
 """
 from __future__ import annotations
@@ -35,12 +35,12 @@ def kpis(conn: sqlite3.Connection, p: Period, agent_id: int | None, min_sec: int
         f"""
         SELECT COUNT(*)                                             AS total_calls,
                COALESCE(SUM(duration_sec), 0)                       AS total_sec,
-               AVG(CASE WHEN duration_sec >= ? THEN duration_sec END) AS att_sec,
+               AVG(duration_sec)                                    AS att_sec,
                COUNT(DISTINCT customer_key)                         AS customers,
                SUM(CASE WHEN duration_sec < ? THEN 1 ELSE 0 END)    AS short_calls
         FROM calls WHERE {where}
         """,
-        [min_sec, min_sec, *args],
+        [min_sec, *args],
     ).fetchone()
     total = r["total_calls"]
     return {
@@ -80,16 +80,16 @@ def _agents(conn, agent_id: int | None) -> list[sqlite3.Row]:
     return conn.execute("SELECT id, name FROM agents WHERE active = 1 ORDER BY name").fetchall()
 
 
-def daily_matrix(conn, p: Period, agent_id: int | None, min_sec: int) -> dict:
-    """행=상담원, 열=날짜, 셀=처리 건수. 행·열 합계 포함."""
+def daily_matrix(conn, p: Period, agent_id: int | None) -> dict:
+    """행=상담원, 열=날짜, 셀=처리 건수(짧은 통화 포함 전체). 행·열 합계 포함."""
     where, args = _where(p, agent_id)
     rows = conn.execute(
         f"""
         SELECT agent_id, substr(started_at, 1, 10) AS d, COUNT(*) AS n
-        FROM calls WHERE {where} AND duration_sec >= ?
+        FROM calls WHERE {where}
         GROUP BY agent_id, d
         """,
-        [*args, min_sec],
+        args,
     ).fetchall()
     dates = [d.isoformat() for d in p.dates()]
     idx = {d: i for i, d in enumerate(dates)}
@@ -116,15 +116,15 @@ def daily_matrix(conn, p: Period, agent_id: int | None, min_sec: int) -> dict:
     }
 
 
-def agent_performance(conn, p: Period, agent_id: int | None, min_sec: int) -> list[dict]:
+def agent_performance(conn, p: Period, agent_id: int | None) -> list[dict]:
     where, args = _where(p, agent_id, col="c.")
     rows = conn.execute(
         f"""
         SELECT a.id AS agent_id, a.name,
-               COALESCE(SUM(CASE WHEN c.duration_sec >= ? THEN 1 ELSE 0 END), 0) AS handled,
+               COUNT(c.id)                                       AS handled,
                COUNT(c.id)                                       AS total_calls,
                COALESCE(SUM(c.duration_sec), 0)                  AS total_sec,
-               AVG(CASE WHEN c.duration_sec >= ? THEN c.duration_sec END) AS att_sec,
+               AVG(c.duration_sec)                               AS att_sec,
                COALESCE(MAX(c.duration_sec), 0)                  AS longest_sec
         FROM agents a
         LEFT JOIN calls c ON c.agent_id = a.id AND {where}
@@ -132,7 +132,7 @@ def agent_performance(conn, p: Period, agent_id: int | None, min_sec: int) -> li
         GROUP BY a.id
         ORDER BY handled DESC, a.name
         """,
-        [min_sec, min_sec, *args, *([agent_id] if agent_id is not None else [])],
+        [*args, *([agent_id] if agent_id is not None else [])],
     ).fetchall()
     return [
         {**dict(r), "att_sec": round(r["att_sec"], 1) if r["att_sec"] is not None else None}
@@ -183,7 +183,7 @@ def hourly_distribution(conn, p: Period, agent_id: int | None) -> list[int]:
     return out
 
 
-def agent_detail(conn, agent_id: int, p: Period, min_sec: int, recent_limit: int = 20) -> dict | None:
+def agent_detail(conn, agent_id: int, p: Period, recent_limit: int = 20) -> dict | None:
     agent = conn.execute("SELECT id, name, extension FROM agents WHERE id = ?", (agent_id,)).fetchone()
     if agent is None:
         return None
@@ -191,11 +191,11 @@ def agent_detail(conn, agent_id: int, p: Period, min_sec: int, recent_limit: int
     rows = conn.execute(
         f"""
         SELECT substr(started_at, 1, 10) AS d,
-               SUM(CASE WHEN duration_sec >= ? THEN 1 ELSE 0 END) AS handled,
-               AVG(CASE WHEN duration_sec >= ? THEN duration_sec END) AS att_sec
+               COUNT(*) AS handled,
+               AVG(duration_sec) AS att_sec
         FROM calls WHERE {where} GROUP BY d
         """,
-        [min_sec, min_sec, *args],
+        args,
     ).fetchall()
     dates = [d.isoformat() for d in p.dates()]
     by_d = {r["d"]: r for r in rows}
@@ -225,8 +225,8 @@ def build(conn, cur: Period, prev: Period, agent_id: int | None) -> dict:
         "prev_period": {"start": prev.start.isoformat(), "end": prev.end.isoformat()},
         "min_call_sec": min_sec,
         "kpis": kpis_with_delta(conn, cur, prev, agent_id, min_sec),
-        "daily_matrix": daily_matrix(conn, cur, agent_id, min_sec),
-        "agent_performance": agent_performance(conn, cur, agent_id, min_sec),
+        "daily_matrix": daily_matrix(conn, cur, agent_id),
+        "agent_performance": agent_performance(conn, cur, agent_id),
         "daily_trend": daily_trend(conn, cur, agent_id),
         "hourly": hourly_distribution(conn, cur, agent_id),
     }

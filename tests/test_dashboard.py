@@ -36,7 +36,7 @@ class KpiTest(unittest.TestCase):
         k = dashboard.kpis(self.conn, DAY, None, 10)
         self.assertEqual(k["total_calls"], 4)
         self.assertEqual(k["total_sec"], 415)
-        self.assertEqual(k["att_sec"], round((100 + 300 + 10) / 3, 1))  # 5초 통화 제외
+        self.assertEqual(k["att_sec"], round((100 + 5 + 300 + 10) / 4, 1))  # 5초 짧은 통화도 포함
         self.assertEqual(k["customers"], 3)  # A, B, C
         self.assertEqual(k["short_ratio"], 0.25)
 
@@ -59,9 +59,10 @@ class KpiTest(unittest.TestCase):
         self.assertEqual(k["customers"]["prev"], 0)  # 빈 번호는 고객으로 세지 않음
         self.assertIsNone(k["customers"]["delta"]["pct"])
 
-    def test_min_call_sec_changes_handled(self):
+    def test_min_call_sec_changes_short_ratio_only(self):
         k = dashboard.kpis(self.conn, DAY, None, 200)
-        self.assertEqual(k["att_sec"], 300)
+        self.assertEqual(k["short_ratio"], 0.75)
+        self.assertEqual(k["att_sec"], round(415 / 4, 1))
 
 
 class TablesTest(unittest.TestCase):
@@ -70,27 +71,27 @@ class TablesTest(unittest.TestCase):
 
     def test_matrix_totals(self):
         cur, _ = resolve("custom", date(2026, 10, 12), date(2026, 10, 11), date(2026, 10, 12))
-        m = dashboard.daily_matrix(self.conn, cur, None, 10)
+        m = dashboard.daily_matrix(self.conn, cur, None)
         self.assertEqual(m["dates"], ["2026-10-11", "2026-10-12"])
         rows = {r["agent_id"]: r for r in m["rows"]}
-        self.assertEqual(rows[1]["counts"], [0, 2])
+        self.assertEqual(rows[1]["counts"], [0, 3])  # 5초 짧은 통화도 포함
         self.assertEqual(rows[2]["counts"], [1, 1])
         self.assertEqual(rows[3]["counts"], [0, 0])
-        self.assertEqual(m["col_totals"], [1, 3])
-        self.assertEqual(m["grand_total"], 4)
-        self.assertEqual(m["max_cell"], 2)
+        self.assertEqual(m["col_totals"], [1, 4])
+        self.assertEqual(m["grand_total"], 5)
+        self.assertEqual(m["max_cell"], 3)
 
     def test_performance(self):
-        rows = {r["agent_id"]: r for r in dashboard.agent_performance(self.conn, DAY, None, 10)}
-        self.assertEqual(rows[1]["handled"], 2)
+        rows = {r["agent_id"]: r for r in dashboard.agent_performance(self.conn, DAY, None)}
+        self.assertEqual(rows[1]["handled"], 3)  # 5초 짧은 통화도 포함
         self.assertEqual(rows[1]["total_sec"], 405)
-        self.assertEqual(rows[1]["att_sec"], 200)
+        self.assertEqual(rows[1]["att_sec"], 135)
         self.assertEqual(rows[1]["longest_sec"], 300)
         self.assertEqual(rows[3]["handled"], 0)
         self.assertIsNone(rows[3]["att_sec"])
 
     def test_performance_agent_filter(self):
-        rows = dashboard.agent_performance(self.conn, DAY, 2, 10)
+        rows = dashboard.agent_performance(self.conn, DAY, 2)
         self.assertEqual([r["agent_id"] for r in rows], [2])
 
     def test_hourly(self):
@@ -107,14 +108,14 @@ class TablesTest(unittest.TestCase):
 
     def test_inactive_agent_with_calls_still_listed(self):
         self.conn.execute("UPDATE agents SET active = 0 WHERE id = 2")
-        m = dashboard.daily_matrix(self.conn, DAY, None, 10)
+        m = dashboard.daily_matrix(self.conn, DAY, None)
         self.assertIn(2, [r["agent_id"] for r in m["rows"]])
 
     def test_agent_detail(self):
-        d = dashboard.agent_detail(self.conn, 1, DAY, 10)
-        self.assertEqual(d["trend"]["handled"], [2])
+        d = dashboard.agent_detail(self.conn, 1, DAY)
+        self.assertEqual(d["trend"]["handled"], [3])
         self.assertEqual(d["recent_calls"][0]["started_at"], "2026-10-12 14:00:00")
-        self.assertIsNone(dashboard.agent_detail(self.conn, 99, DAY, 10))
+        self.assertIsNone(dashboard.agent_detail(self.conn, 99, DAY))
 
 
 if __name__ == "__main__":

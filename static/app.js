@@ -308,7 +308,7 @@
     renderTrend(d.daily_trend);
     renderHourly(d.hourly);
     renderRank(d.agent_performance);
-    renderMatrix(d.daily_matrix, d.min_call_sec);
+    renderMatrix(d.daily_matrix);
   }
 
   // ---------- 핵심 지표 ----------
@@ -335,11 +335,11 @@
       ? "아직 통화 기록이 없어요."
       : !state.agentId && top && top.handled
         ? [`가장 많이 처리한 상담원은 `, el("b", {}, `${top.name}님`), `이에요 · ${fmtInt(top.handled)}건`]
-        : [`처리 건수는 `, el("b", {}, `${fmtInt(d.agent_performance.reduce((s, r) => s + r.handled, 0))}건`), `이에요 (${d.min_call_sec}초 이상 통화)`];
+        : [`처리 건수는 `, el("b", {}, `${fmtInt(d.agent_performance.reduce((s, r) => s + r.handled, 0))}건`), `이에요 (짧은 통화 포함)`];
 
     const minis = [
       { label: "총 통화시간", m: k.total_sec, fmt: fmtDur },
-      { label: "평균 통화시간", m: k.att_sec, fmt: fmtDur, title: `${d.min_call_sec}초 이상 통화의 평균(ATT)` },
+      { label: "평균 통화시간", m: k.att_sec, fmt: fmtDur, title: "짧은 통화를 포함한 전체 통화의 평균(ATT)" },
       { label: "고객 수", m: k.customers, fmt: (v) => `${fmtInt(v)}명`, title: "같은 번호는 한 번만 셉니다" },
       { label: `짧은 통화 (${d.min_call_sec}초 미만)`, m: k.short_ratio, fmt: fmtPct, kind: "pp" },
     ];
@@ -509,8 +509,8 @@
   }
 
   // ---------- 일별 처리건수(히트맵) ----------
-  function renderMatrix(m, minSec) {
-    $("#matrix-caption").textContent = `${minSec}초 이상 통화만 셌어요 · 진할수록 많아요`;
+  function renderMatrix(m) {
+    $("#matrix-caption").textContent = "짧은 통화까지 모두 셌어요 · 진할수록 많아요";
     const thead = el("thead", {}, el("tr", {},
       el("th", { class: "name" }, ""),
       m.dates.map((d) => el("th", { class: isWeekend(d) ? "weekend" : null, title: d }, md(d), el("span", { class: "dow" }, dow(d)))),
@@ -1123,7 +1123,7 @@
     try {
       const s = await api("/api/settings", { method: "POST", body: JSON.stringify(body) });
       fillSettings(s);
-      msg.className = "form-msg ok"; msg.textContent = `저장했어요. 이제 ${s.min_call_sec}초 이상 통화를 처리 건수로 셉니다.`;
+      msg.className = "form-msg ok"; msg.textContent = `저장했어요. 이제 ${s.min_call_sec}초 미만 통화를 짧은 통화로 분류해요.`;
       state.minSec = s.min_call_sec;
       dashboardStale = true;
     } catch (err) {

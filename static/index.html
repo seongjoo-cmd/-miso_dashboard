@@ -215,12 +215,12 @@
       <form id="settings-form" class="card" novalidate>
         <h2>통화 기준</h2>
         <div class="field">
-          <label for="min-call-sec">처리 건수로 셀 최소 통화시간</label>
+          <label for="min-call-sec">짧은 통화 기준</label>
           <div class="input-unit">
             <input type="number" id="min-call-sec" min="0" max="600" step="1" inputmode="numeric">
             <span>초</span>
           </div>
-          <p class="help">이 시간 이상이면 처리 건수와 평균 통화시간에 들어가고, 미만이면 짧은 통화로 분류돼요. 바꾸면 지난 기간에도 바로 적용돼요.</p>
+          <p class="help">이 시간 미만이면 짧은 통화로 분류돼요(짧은 통화 비율, 통화 목록의 '짧은 통화 빼기'). 처리 건수와 평균 통화시간은 짧은 통화도 포함해 셉니다.</p>
         </div>
         <div class="field">
           <label for="fallback-kbps">파일 크기로 통화시간 추정할 때 비트레이트</label>
@@ -373,6 +373,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261012-10"></script>
+  <script src="/static/app.js?v=20261013-2"></script>
 </body>
 </html>

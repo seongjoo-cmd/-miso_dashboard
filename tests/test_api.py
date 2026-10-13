@@ -131,7 +131,7 @@ class ApiTest(unittest.TestCase):
             _, d, _ = self.req("GET", "/api/dashboard?preset=today", token=a)
             self.assertEqual(d["min_call_sec"], 120)
             self.assertEqual(d["kpis"]["short_ratio"]["value"], 1.0)
-            self.assertIsNone(d["kpis"]["att_sec"]["value"])
+            self.assertIsNotNone(d["kpis"]["att_sec"]["value"])  # 짧은 통화도 평균에 포함
         finally:
             self.req("POST", "/api/settings", {"min_call_sec": 10}, token=a)
 

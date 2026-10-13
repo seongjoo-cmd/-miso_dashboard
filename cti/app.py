@@ -453,8 +453,7 @@ def make_handler(cfg: Config):
                 agent_id = int(m.group(1))
                 if method == "GET" and not m.group(2):
                     cur, _ = _parse_period(cfg, q)
-                    detail = dashboard.agent_detail(
-                        conn, agent_id, cur, get_setting_int(conn, "min_call_sec"))
+                    detail = dashboard.agent_detail(conn, agent_id, cur)
                     if detail is None:
                         raise ApiError(HTTPStatus.NOT_FOUND, "상담원을 찾을 수 없습니다.")
                     if user["role"] == "admin" and SOURCE == "folder":
