@@ -153,13 +153,12 @@
   };
 
   // ---------- 로그인 ----------
-  let setupMode = false, signupMode = false;
+  let signupMode = false;
   function renderLoginMode() {
-    const newPw = setupMode || signupMode;
-    $("#login-title").replaceChildren(...(setupMode ? ["처음이시네요"] : signupMode ? ["회원가입"]
+    const newPw = signupMode;
+    $("#login-title").replaceChildren(...(signupMode ? ["회원가입"]
       : [el("span", { class: "login-brand" }, "miso internet sales"), "통화 대시보드"]));
-    $("#login-sub").textContent = setupMode ? "저장소가 연결됐어요. 관리자 아이디와 비밀번호를 정해 주세요."
-      : signupMode ? "회사 이메일의 슬랙으로 인증번호를 보내 드려요" : "아이디와 비밀번호를 입력해 주세요";
+    $("#login-sub").textContent = signupMode ? "회사 이메일의 슬랙으로 인증번호를 보내 드려요" : "아이디와 비밀번호를 입력해 주세요";
     $("#code-row").hidden = !signupMode;
     $("#username-label").textContent = signupMode ? "회사 이메일" : "아이디";
     const name = $("#login-form [name=username]"), pw = $("#login-form [name=password]");
@@ -168,8 +167,7 @@
     pw.autocomplete = newPw ? "new-password" : "current-password";
     pw.placeholder = newPw ? "8자 이상" : "";
     $("#password2-row").hidden = !newPw;
-    $("#login-btn").textContent = setupMode ? "관리자 계정 만들고 시작하기" : signupMode ? "가입하고 시작하기" : "로그인";
-    $("#signup-toggle").hidden = setupMode;
+    $("#login-btn").textContent = signupMode ? "가입하고 시작하기" : "로그인";
     $("#signup-toggle").textContent = signupMode ? "로그인으로 돌아가기" : "회원가입";
     $("#login-error").textContent = "";
   }
@@ -194,12 +192,12 @@
     setTimeout(() => $("#login-form [name=username]").focus(), 0);
     try {
       const st = await api("/api/status");
-      setupMode = st.needs_setup;
+      if (st.needs_setup) signupMode = true;  // 계정이 없으면 바로 회원가입
       const s = $("#storage-status");
       s.className = `storage-status ${st.storage === "temporary" ? "temp" : "ok"}`;
       s.textContent = st.storage === "permanent" ? "저장소 연결됨"
         : st.storage === "temporary" ? "임시 저장소 · 데모 데이터" : "이 컴퓨터에 저장 중";
-    } catch { setupMode = false; }
+    } catch { /* 무시 */ }
     renderLoginMode();
   }
   $("#login-form").addEventListener("submit", async (e) => {
@@ -208,15 +206,15 @@
     const err = $("#login-error");
     err.textContent = "";
     if (!f.username || !f.password) { err.textContent = "아이디와 비밀번호를 모두 입력해 주세요."; return; }
-    if ((setupMode || signupMode) && f.password !== f.password2) { err.textContent = "두 비밀번호가 달라요."; return; }
+    if (signupMode && f.password !== f.password2) { err.textContent = "두 비밀번호가 달라요."; return; }
     if (signupMode && !/@getmiso\.com$/i.test(f.username.trim())) { err.textContent = "@getmiso.com 이메일로만 가입할 수 있어요."; return; }
     if (signupMode && !/^\d{6}$/.test((f.code || "").trim())) { err.textContent = "슬랙으로 받은 인증번호 6자리를 입력해 주세요."; return; }
     const btn = e.target.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
-      state.user = await api(setupMode ? "/api/setup" : signupMode ? "/api/signup" : "/api/login",
+      state.user = await api(signupMode ? "/api/signup" : "/api/login",
         { method: "POST", body: JSON.stringify({ username: f.username, password: f.password, code: f.code }) });
-      setupMode = signupMode = false;
+      signupMode = false;
       e.target.reset();
       await startApp();
     } catch (ex) {

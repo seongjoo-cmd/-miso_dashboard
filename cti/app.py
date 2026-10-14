@@ -343,18 +343,7 @@ def make_handler(cfg: Config):
                     "demo": cfg.demo,
                     "needs_setup": _user_count(conn) == 0,
                 })
-            if method == "POST" and path == "/api/setup":
-                # 계정이 하나도 없을 때만: 첫 관리자 계정을 화면에서 만든다
-                body = self._read_json()
-                name, pw = str(body.get("username", "")).strip(), str(body.get("password", ""))
-                if _user_count(conn) > 0:
-                    raise ApiError(HTTPStatus.CONFLICT, "이미 관리자 계정이 있어요. 로그인해 주세요.")
-                if not 2 <= len(name) <= 32 or not re.fullmatch(r"[A-Za-z0-9._-]+", name):
-                    raise ApiError(HTTPStatus.BAD_REQUEST, "아이디는 영문·숫자 2~32자로 정해 주세요.")
-                if len(pw) < 8:
-                    raise ApiError(HTTPStatus.BAD_REQUEST, "비밀번호는 8자 이상으로 정해 주세요.")
-                auth.create_user(conn, name, pw, "admin")
-                return self._login_response(conn, auth.login(conn, name, pw))
+            # 계정이 하나도 없을 때도 회원가입(슬랙 인증)으로만 시작한다. OWNER 가 가입하면 관리자.
 
             if method == "POST" and path == "/api/signup/code":
                 try:

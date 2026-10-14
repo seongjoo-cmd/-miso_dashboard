@@ -1,11 +1,14 @@
 import json
+import re
 import tempfile
 import threading
 import unittest
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
+from cti import auth, slack
 from cti.app import Config, make_handler
 
 
@@ -26,18 +29,18 @@ class SetupTest(unittest.TestCase):
         r = c.getresponse(); data = json.loads(r.read() or b"{}"); cookie = r.getheader("Set-Cookie"); c.close()
         return r.status, data, cookie
 
-    def test_first_run_setup_once(self):
+    def test_first_run_needs_slack_signup(self):
         status, s, _ = self.req("GET", "/api/status")
         self.assertEqual((status, s["needs_setup"], s["storage"]), (200, True, "local"))
-        self.assertEqual(self.req("POST", "/api/setup", {"username": "a b", "password": "miso1234"})[0], 400)
-        self.assertEqual(self.req("POST", "/api/setup", {"username": "misomiso", "password": "short"})[0], 400)
-        status, u, cookie = self.req("POST", "/api/setup", {"username": "misomiso", "password": "miso1234"})
-        self.assertEqual((status, u["username"], u["role"]), (200, "misomiso", "admin"))
+        # 인증 없이 관리자를 만드는 길은 없다
+        self.assertEqual(self.req("POST", "/api/setup", {"username": "hacker", "password": "12345678"})[0], 401)
+        sent = {}
+        with mock.patch.object(slack, "dm", side_effect=lambda conn, email, text: sent.update(code=re.search(r"\d{6}", text).group())):
+            self.assertEqual(self.req("POST", "/api/signup/code", {"username": auth.OWNER})[0], 200)
+        status, u, cookie = self.req("POST", "/api/signup", {"username": auth.OWNER, "password": "miso1234", "code": sent["code"]})
+        self.assertEqual((status, u["username"], u["role"]), (200, auth.OWNER, "admin"))
         self.assertIn("cti_session=", cookie)
         self.assertFalse(self.req("GET", "/api/status")[1]["needs_setup"])
-        # 계정이 생긴 뒤에는 누구도 다시 만들 수 없음
-        self.assertEqual(self.req("POST", "/api/setup", {"username": "hacker", "password": "12345678"})[0], 409)
-        self.assertEqual(self.req("POST", "/api/login", {"username": "misomiso", "password": "miso1234"})[0], 200)
 
 
 if __name__ == "__main__":
