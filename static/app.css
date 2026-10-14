@@ -92,6 +92,9 @@ h1, h2, h3, p { margin: 0; }
   background: var(--fill); font-size: 17px; outline: none; transition: border-color .15s, background .15s;
 }
 .input input:focus { border-color: var(--blue); background: var(--card); }
+.code-wrap { display: flex; gap: 8px; }
+.code-wrap input { flex: 1; min-width: 0; }
+.code-wrap .btn { height: 56px; flex: none; padding: 0 16px; }
 .form-error { color: var(--danger); font-size: 14px; min-height: 20px; }
 .storage-status { text-align: center; font-size: 13px; color: var(--text-3); margin-top: 8px; display: flex; justify-content: center; align-items: center; gap: 6px; }
 .storage-status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }

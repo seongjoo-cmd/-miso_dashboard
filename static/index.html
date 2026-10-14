@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261013-7">
+  <link rel="stylesheet" href="/static/app.css?v=20261014-1">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -32,6 +32,13 @@
         <span id="username-label">아이디</span>
         <input name="username" autocomplete="username" autocapitalize="off" required>
       </label>
+      <div class="input" id="code-row" hidden>
+        <span>인증번호</span>
+        <div class="code-wrap">
+          <input name="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="슬랙 DM 으로 받은 6자리" aria-label="인증번호">
+          <button type="button" id="send-code" class="btn btn-secondary">인증번호 받기</button>
+        </div>
+      </div>
       <label class="input">
         <span>비밀번호</span>
         <input name="password" type="password" autocomplete="current-password" required>
@@ -416,6 +423,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261013-7"></script>
+  <script src="/static/app.js?v=20261014-1"></script>
 </body>
 </html>

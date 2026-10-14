@@ -1,5 +1,6 @@
-"""회원가입(@getmiso.com 만)·비밀번호 바꾸기·관리자 회원 관리."""
+"""회원가입(@getmiso.com 만, 슬랙 인증번호)·비밀번호 바꾸기·관리자 회원 관리."""
 import json
+import re
 import tempfile
 import threading
 import unittest
@@ -7,8 +8,9 @@ from datetime import date
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
-from cti import auth
+from cti import auth, signup, slack
 from cti.app import Config, make_handler
 from cti.db import connect
 
@@ -25,6 +27,11 @@ class MembersTest(unittest.TestCase):
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         auth._fails.clear()
+        self.sent = {}  # 이메일 -> 슬랙으로 보낸 인증번호
+        patcher = mock.patch.object(slack, "dm", side_effect=lambda conn, email, text:
+                                    self.sent.__setitem__(email, re.search(r"\d{6}", text).group()))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def tearDown(self):
         self.httpd.shutdown()
@@ -47,8 +54,14 @@ class MembersTest(unittest.TestCase):
         token = cookie.split(";")[0].split("=", 1)[1] if cookie else None
         return r.status, data, token
 
+    def send_code(self, email):
+        return self.req("POST", "/api/signup/code", {"username": email})
+
     def signup(self, email, pw="password1"):
-        return self.req("POST", "/api/signup", {"username": email, "password": pw})
+        status, data, _ = self.send_code(email)
+        if status != 200:
+            return status, data, None
+        return self.req("POST", "/api/signup", {"username": email, "password": pw, "code": self.sent[data["sent_to"]]})
 
     def users(self, token):
         return {u["username"]: u for u in self.req("GET", "/api/users", token=token)[1]}
@@ -56,13 +69,33 @@ class MembersTest(unittest.TestCase):
     def test_signup_only_company_email(self):
         for bad in ("a@gmail.com", "a@getmiso.com.evil.com", "a@xgetmiso.com", "admin"):
             self.assertEqual(self.signup(bad)[0], 400, bad)
-        self.assertEqual(self.signup("kim@getmiso.com", "short")[0], 400)
-        status, user, token = self.signup(" Kim@GetMiso.com ")
+        self.assertEqual(self.send_code("Kim@GetMiso.com")[0], 200)
+        code = self.sent["kim@getmiso.com"]
+        self.assertEqual(self.req("POST", "/api/signup", {"username": "kim@getmiso.com", "password": "short", "code": code})[0], 400)
+        status, user, token = self.req("POST", "/api/signup", {"username": "Kim@GetMiso.com", "password": "password1", "code": code})
         self.assertEqual(status, 200)
         self.assertEqual((user["username"], user["role"]), ("kim@getmiso.com", "viewer"))
         self.assertTrue(token)
         self.assertEqual(self.signup("kim@getmiso.com")[0], 400)  # 중복
         self.assertEqual(self.req("POST", "/api/login", {"username": "KIM@getmiso.com", "password": "password1"})[0], 200)
+
+    def test_code_required_and_checked(self):
+        email = "kim@getmiso.com"
+        self.assertEqual(self.req("POST", "/api/signup", {"username": email, "password": "password1", "code": "123456"})[0], 400)
+        self.assertEqual(self.send_code(email)[0], 200)
+        self.assertEqual(self.send_code(email)[0], 400)  # 1분 안에 다시 받기 막음
+        wrong = "000000" if self.sent[email] != "000000" else "111111"
+        for _ in range(signup.MAX_TRIES):
+            self.assertEqual(self.req("POST", "/api/signup", {"username": email, "password": "password1", "code": wrong})[0], 400)
+        # 다 틀리면 맞는 번호도 안 받는다
+        status, data, _ = self.req("POST", "/api/signup", {"username": email, "password": "password1", "code": self.sent[email]})
+        self.assertEqual(status, 400)
+        self.assertIn("만료", data["error"])
+
+    def test_slack_error_shown(self):
+        with mock.patch.object(slack, "dm", side_effect=slack.SlackError("슬랙 계정을 찾지 못했어요")):
+            status, data, _ = self.send_code("kim@getmiso.com")
+        self.assertEqual((status, data["error"]), (400, "슬랙 계정을 찾지 못했어요"))
 
     def test_owner_signs_up_as_admin(self):
         _, user, _ = self.signup(auth.OWNER)

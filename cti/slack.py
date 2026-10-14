@@ -126,6 +126,20 @@ def missing_message(agents: list[dict], today: date, now: datetime, url: str | N
     return f"{title} ({head})", blocks
 
 
+def dm(conn, email: str, text: str) -> None:
+    """이메일로 슬랙 사용자를 찾아 봇 DM 으로 보낸다(가입 인증번호용)."""
+    tok, _ = token(conn)
+    if not tok:
+        raise SlackError("슬랙 봇이 아직 연결되지 않았어요. 관리자에게 알려 주세요.")
+    try:
+        user = _call(tok, "users.lookupByEmail", {"email": email})["user"]["id"]
+    except SlackError as e:
+        if str(e) == _ERRORS["users_not_found"]:
+            raise SlackError("이 이메일로 가입한 슬랙 계정을 찾지 못했어요.")
+        raise
+    _call(tok, "chat.postMessage", {"channel": user, "text": text}, post=True)
+
+
 def send(conn, text: str, blocks: list) -> dict:
     tok, _ = token(conn)
     if not tok:

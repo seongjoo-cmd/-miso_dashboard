@@ -77,6 +77,10 @@ def normalize(username: str) -> str:
     return username.lower() if "@" in username else username
 
 
+def valid_signup_email(email: str) -> bool:
+    return bool(_EMAIL.fullmatch(email))
+
+
 def is_owner(user: dict | None) -> bool:
     return bool(user) and user["username"] == OWNER
 
@@ -88,7 +92,7 @@ class SignupError(ValueError):
 def signup(conn: sqlite3.Connection, email: str, password: str) -> str:
     """회사 이메일로 가입. OWNER 는 관리자, 나머지는 조회 권한. 정리된 이메일을 돌려준다."""
     email = normalize(email)
-    if not _EMAIL.fullmatch(email):
+    if not valid_signup_email(email):
         raise SignupError(f"@{SIGNUP_DOMAIN} 이메일로만 가입할 수 있어요.")
     if len(password) < 8:
         raise SignupError("비밀번호는 8자 이상으로 정해 주세요.")

@@ -159,7 +159,8 @@
     $("#login-title").replaceChildren(...(setupMode ? ["처음이시네요"] : signupMode ? ["회원가입"]
       : [el("span", { class: "login-brand" }, "miso internet sales"), "통화 대시보드"]));
     $("#login-sub").textContent = setupMode ? "저장소가 연결됐어요. 관리자 아이디와 비밀번호를 정해 주세요."
-      : signupMode ? "@getmiso.com 회사 이메일로 가입해요" : "아이디와 비밀번호를 입력해 주세요";
+      : signupMode ? "회사 이메일의 슬랙으로 인증번호를 보내 드려요" : "아이디와 비밀번호를 입력해 주세요";
+    $("#code-row").hidden = !signupMode;
     $("#username-label").textContent = signupMode ? "회사 이메일" : "아이디";
     const name = $("#login-form [name=username]"), pw = $("#login-form [name=password]");
     name.placeholder = signupMode ? "name@getmiso.com" : "";
@@ -173,6 +174,19 @@
     $("#login-error").textContent = "";
   }
   $("#signup-toggle").addEventListener("click", () => { signupMode = !signupMode; renderLoginMode(); });
+  $("#send-code").addEventListener("click", async () => {
+    const email = $("#login-form [name=username]").value.trim(), err = $("#login-error"), btn = $("#send-code");
+    err.textContent = "";
+    if (!/@getmiso\.com$/i.test(email)) { err.textContent = "@getmiso.com 이메일을 먼저 입력해 주세요."; return; }
+    btn.disabled = true;
+    try {
+      await api("/api/signup/code", { method: "POST", body: JSON.stringify({ username: email }) });
+      toast("슬랙 DM 으로 인증번호를 보냈어요");
+      btn.textContent = "다시 받기";
+      $("#login-form [name=code]").focus();
+      setTimeout(() => { btn.disabled = false; }, 60000);
+    } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+  });
   async function showLogin() {
     $("#app-view").hidden = true;
     $("#login-view").hidden = false;
@@ -196,11 +210,12 @@
     if (!f.username || !f.password) { err.textContent = "아이디와 비밀번호를 모두 입력해 주세요."; return; }
     if ((setupMode || signupMode) && f.password !== f.password2) { err.textContent = "두 비밀번호가 달라요."; return; }
     if (signupMode && !/@getmiso\.com$/i.test(f.username.trim())) { err.textContent = "@getmiso.com 이메일로만 가입할 수 있어요."; return; }
+    if (signupMode && !/^\d{6}$/.test((f.code || "").trim())) { err.textContent = "슬랙으로 받은 인증번호 6자리를 입력해 주세요."; return; }
     const btn = e.target.querySelector("button[type=submit]");
     btn.disabled = true;
     try {
       state.user = await api(setupMode ? "/api/setup" : signupMode ? "/api/signup" : "/api/login",
-        { method: "POST", body: JSON.stringify({ username: f.username, password: f.password }) });
+        { method: "POST", body: JSON.stringify({ username: f.username, password: f.password, code: f.code }) });
       setupMode = signupMode = false;
       e.target.reset();
       await startApp();

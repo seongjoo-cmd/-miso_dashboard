@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT NOT NULL CHECK (role IN ('admin', 'viewer'))
 );
 
+-- 회원가입 인증번호(슬랙 DM). 번호는 해시로만 둔다.
+CREATE TABLE IF NOT EXISTS signup_codes (
+    email      TEXT PRIMARY KEY,
+    code_hash  TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    tries      INTEGER NOT NULL DEFAULT 0,
+    sent_at    TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
     token      TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id),

@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import auth, backup, calls, dashboard, demo, drive_backup, ingest, slack, uploads
+from . import auth, signup, backup, calls, dashboard, demo, drive_backup, ingest, slack, uploads
 from .db import connect, get_setting, get_setting_int, set_setting
 from .periods import PRESETS, resolve
 
@@ -356,13 +356,20 @@ def make_handler(cfg: Config):
                 auth.create_user(conn, name, pw, "admin")
                 return self._login_response(conn, auth.login(conn, name, pw))
 
+            if method == "POST" and path == "/api/signup/code":
+                try:
+                    email = signup.send_code(conn, str(self._read_json().get("username", "")))
+                except signup.SignupError as e:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
+                return self._send_json(200, {"sent_to": email})
             if method == "POST" and path == "/api/signup":
                 body = self._read_json()
+                pw = str(body.get("password", ""))
                 try:
-                    email = auth.signup(conn, str(body.get("username", "")), str(body.get("password", "")))
-                except auth.SignupError as e:
+                    email = signup.signup(conn, str(body.get("username", "")), pw, str(body.get("code", "")))
+                except signup.SignupError as e:
                     raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
-                return self._login_response(conn, auth.login(conn, email, str(body.get("password", ""))))
+                return self._login_response(conn, auth.login(conn, email, pw))
 
             if method == "POST" and path == "/api/drive/push":
                 return self._drive_push(conn)
