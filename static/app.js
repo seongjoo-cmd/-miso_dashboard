@@ -799,7 +799,8 @@
     if (line.hidden) return;
     const [cls, text] = driveStatusText(st);
     line.className = `conn-status small ${cls}`;
-    line.textContent = text;
+    // 오류는 설정 화면까지 가지 않아도 내용이 보이게
+    line.textContent = st.state === "error" && st.last_run?.error ? `${text} · ${st.last_run.error}` : text;
   }
   async function loadDriveStatus() {
     if (state.source !== "drive") return;
