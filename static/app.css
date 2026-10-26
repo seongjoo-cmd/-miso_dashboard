@@ -152,7 +152,24 @@ h1, h2, h3, p { margin: 0; }
 .chip[aria-checked="true"] { background: var(--text); color: var(--card); }
 .chip-select { position: relative; }
 .chip-select.on { background: var(--blue-weak); color: var(--blue-text); }
-.chip-select select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.menu {
+  position: fixed; z-index: 60; width: 260px; max-height: min(440px, 60vh); display: flex; flex-direction: column;
+  background: var(--card); border-radius: 18px; padding: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, .16);
+}
+.menu-search {
+  flex: none; height: 42px; margin-bottom: 6px; padding: 0 14px; border: 0; border-radius: 12px;
+  background: var(--fill); color: var(--text); font-size: 15px;
+}
+.menu-list { overflow-y: auto; overscroll-behavior: contain; }
+.menu-item {
+  width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 12px 14px; border: 0; border-radius: 12px; background: transparent; color: var(--text);
+  font-size: 15px; font-weight: 500; text-align: left; cursor: pointer;
+}
+.menu-item:hover, .menu-item:focus-visible { background: var(--fill); outline: none; }
+.menu-item[aria-selected="true"] { color: var(--blue-text); font-weight: 700; }
+.menu-check { font-size: 15px; }
+.menu-empty { padding: 16px 14px; color: var(--text-3); font-size: 14px; }
 .custom-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .custom-range input {
   height: 40px; padding: 0 12px; border-radius: 12px; border: 0; background: var(--card); box-shadow: var(--shadow);
@@ -191,7 +208,7 @@ h1, h2, h3, p { margin: 0; }
 /* ---------- 차트 ---------- */
 .chart-box { position: relative; height: 240px; }
 .chart-sm { height: 180px; }
-.chips-sm { margin: 0 0 12px; padding: 0; }
+.chips-sm { margin: 0 0 12px; padding: 0; flex-wrap: wrap; overflow: visible; }
 .chips-sm .chip { height: 32px; padding: 0 12px; font-size: 13px; background: var(--fill); box-shadow: none; }
 .chips-sm .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .chips-sm .chip[aria-pressed="true"] { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--c); color: var(--text); }

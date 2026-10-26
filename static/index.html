@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261026-1">
+  <link rel="stylesheet" href="/static/app.css?v=20261026-2">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -149,11 +149,16 @@
           <button class="chip" data-preset="this_week">이번 주</button>
           <button class="chip" data-preset="this_month">이번 달</button>
           <button class="chip" data-preset="custom">직접 지정</button>
-          <label class="chip chip-select">
+          <button type="button" class="chip chip-select" id="agent-chip" aria-haspopup="listbox" aria-expanded="false">
             <span id="agent-chip-label">에이전트 전체</span>
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M4 6l4 4 4-4z"/></svg>
-            <select id="agent-filter" aria-label="에이전트"><option value="">에이전트 전체</option></select>
-          </label>
+          </button>
+        </div>
+        <!-- 선택값 보관용(화면에는 아래 메뉴가 보임) -->
+        <select id="agent-filter" aria-label="에이전트" hidden><option value="">에이전트 전체</option></select>
+        <div id="agent-menu" class="menu" hidden>
+          <input id="agent-menu-search" class="menu-search" type="search" placeholder="이름으로 찾기" autocomplete="off" aria-label="에이전트 찾기">
+          <div id="agent-menu-list" class="menu-list" role="listbox" aria-label="에이전트"></div>
         </div>
         <div id="custom-range" class="custom-range" hidden>
           <input type="date" id="start-date" aria-label="시작일">
@@ -335,6 +340,11 @@
         <h2>회원 관리</h2>
         <ul class="list user-list" id="users-list"></ul>
       </section>
+      <section class="card">
+        <h2>에이전트 목록</h2>
+        <p class="caption">숨기면 에이전트 메뉴와 통계에서 빠져요. 녹취는 지워지지 않아요.</p>
+        <ul class="list user-list" id="agents-admin-list"></ul>
+      </section>
     </main>
 
     <!-- 모바일 하단 탭 -->
@@ -429,6 +439,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261026-4"></script>
+  <script src="/static/app.js?v=20261026-6"></script>
 </body>
 </html>

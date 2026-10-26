@@ -244,15 +244,7 @@
     $("#user-role").textContent = u.role === "admin" ? "관리자" : "회원";
     $("#demo-badge").hidden = !u.demo;
     $$('.nav-item[data-view="admin"]').forEach((a) => { a.hidden = u.role !== "admin"; });
-    const agents = await api("/api/agents");
-    agentOrder = agents.map((a) => a.id).sort((a, b) => a - b);
-    const sel = $("#agent-filter");
-    sel.replaceChildren(el("option", { value: "" }, "에이전트 전체"),
-      ...agents.map((a) => el("option", { value: a.id }, a.name)));
-    if (!agents.some((a) => String(a.id) === String(state.agentId))) state.agentId = "";
-    sel.value = state.agentId;
-    syncFilterUI();
-    setupLookup();
+    await refreshAgentFilter();
     try {
       const st = await api("/api/settings");
       state.minSec = st.min_call_sec; state.source = st.source;
@@ -263,6 +255,18 @@
     dashboardStale = true;
     callsLoaded = false;
     await route();
+  }
+
+  async function refreshAgentFilter() {
+    const agents = await api("/api/agents");
+    agentOrder = agents.map((a) => a.id).sort((a, b) => a - b);
+    const sel = $("#agent-filter");
+    sel.replaceChildren(el("option", { value: "" }, "에이전트 전체"),
+      ...agents.map((a) => el("option", { value: a.id }, a.name)));
+    if (!agents.some((a) => String(a.id) === String(state.agentId))) state.agentId = "";
+    sel.value = state.agentId;
+    syncFilterUI();
+    setupLookup();
   }
 
   // ---------- 메뉴 ----------
@@ -321,7 +325,7 @@
     $("#end-date").value = state.end || todayIso();
     const sel = $("#agent-filter");
     $("#agent-chip-label").textContent = sel.selectedOptions[0]?.textContent || "에이전트 전체";
-    sel.closest(".chip-select").classList.toggle("on", !!state.agentId);
+    $("#agent-chip").classList.toggle("on", !!state.agentId);
   }
   $$(".chip[data-preset]").forEach((b) => b.addEventListener("click", () => {
     state.preset = b.dataset.preset;
@@ -343,6 +347,42 @@
   $("#agent-filter").addEventListener("change", (e) => {
     state.agentId = e.target.value; syncFilterUI(); saveFilters(); load();
   });
+
+  // 에이전트 고르기 메뉴(기본 select 목록 대신). 칩 줄이 가로로 넘쳐도 잘리지 않게 화면 기준(fixed)으로 띄움
+  const agentMenu = $("#agent-menu");
+  function renderAgentMenu() {
+    const sel = $("#agent-filter"), q = $("#agent-menu-search").value.trim();
+    const opts = [...sel.options].filter((o, i) => i === 0 || !q || o.textContent.includes(q));
+    $("#agent-menu-list").replaceChildren(...(opts.length ? opts.map((o) => el("button", {
+      type: "button", class: "menu-item", role: "option", "aria-selected": String(o.value === sel.value),
+      onclick: () => { closeAgentMenu(); if (o.value !== sel.value) { sel.value = o.value; sel.dispatchEvent(new Event("change")); } },
+    }, o.textContent, o.value === sel.value ? el("span", { class: "menu-check", "aria-hidden": "true" }, "✓") : null))
+      : [el("div", { class: "menu-empty" }, "찾는 에이전트가 없어요")]));
+  }
+  function openAgentMenu() {
+    const r = $("#agent-chip").getBoundingClientRect();
+    agentMenu.hidden = false;
+    agentMenu.style.top = `${r.bottom + 8}px`;
+    agentMenu.style.left = `${Math.max(16, Math.min(r.left, innerWidth - agentMenu.offsetWidth - 16))}px`;
+    $("#agent-menu-search").value = "";
+    renderAgentMenu();
+    $("#agent-chip").setAttribute("aria-expanded", "true");
+    $("#agent-menu-list .menu-item[aria-selected=\"true\"]")?.scrollIntoView({ block: "nearest" });
+    if (matchMedia("(pointer: fine)").matches) $("#agent-menu-search").focus();  // 휴대폰은 키보드가 바로 뜨지 않게
+  }
+  function closeAgentMenu() {
+    if (agentMenu.hidden) return;
+    agentMenu.hidden = true;
+    $("#agent-chip").setAttribute("aria-expanded", "false");
+  }
+  $("#agent-chip").addEventListener("click", () => (agentMenu.hidden ? openAgentMenu() : closeAgentMenu()));
+  $("#agent-menu-search").addEventListener("input", renderAgentMenu);
+  document.addEventListener("pointerdown", (e) => {
+    if (!agentMenu.hidden && !agentMenu.contains(e.target) && !$("#agent-chip").contains(e.target)) closeAgentMenu();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAgentMenu(); });
+  addEventListener("resize", closeAgentMenu);
+  addEventListener("hashchange", closeAgentMenu);
 
   // ---------- 불러오기 ----------
   let loadSeq = 0;
@@ -1285,7 +1325,28 @@
 
   // ---------- 관리: 회원 관리 ----------
   const tempPw = {};  // 방금 초기화한 회원의 임시 비밀번호(이 화면에만 보임)
+  async function loadAgentsAdmin() {
+    let agents;
+    try { agents = await api("/api/agents?all=1"); } catch (err) { toast(err.message); return; }
+    $("#agents-admin-list").replaceChildren(...agents.map((a) => el("li", {},
+      el("span", { class: "avatar" }, a.name.slice(0, 1)),
+      el("div", { class: "main" },
+        el("div", { class: "t" }, a.name),
+        el("div", { class: "s" }, a.active ? "보이는 중" : "숨김")),
+      el("div", { class: "user-actions" },
+        el("button", { type: "button", class: `btn ${a.active ? "btn-secondary" : "btn-primary"} btn-sm`,
+          onclick: () => setAgentActive(a, !a.active) }, a.active ? "숨기기" : "다시 보이기")))));
+  }
+  async function setAgentActive(a, active) {
+    try {
+      await api(`/api/agents/${a.id}/active`, { method: "POST", body: JSON.stringify({ active }) });
+      toast(active ? `${a.name} 에이전트를 다시 보여요` : `${a.name} 에이전트를 숨겼어요`);
+      await Promise.all([loadAgentsAdmin(), refreshAgentFilter()]);
+      dashboardStale = true;
+    } catch (err) { toast(err.message); }
+  }
   async function loadUsers() {
+    loadAgentsAdmin();
     let users;
     try { users = await api("/api/users"); } catch (err) { toast(err.message); return; }
     const me = state.user.id;

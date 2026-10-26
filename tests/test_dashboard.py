@@ -106,10 +106,16 @@ class TablesTest(unittest.TestCase):
         self.assertEqual(t["total"], [4])
         self.assertEqual({s["agent_id"]: s["counts"] for s in t["series"]}, {1: [3], 2: [1], 3: [0]})
 
-    def test_inactive_agent_with_calls_still_listed(self):
-        self.conn.execute("UPDATE agents SET active = 0 WHERE id = 2")
+    def test_hidden_agent_left_out_of_stats(self):
+        m0 = dashboard.daily_matrix(self.conn, DAY, None)
+        before, n2 = m0["grand_total"], next(r["total"] for r in m0["rows"] if r["agent_id"] == 2)
+        self.conn.execute("UPDATE agents SET active = 0 WHERE id = 2")  # 관리에서 숨김
         m = dashboard.daily_matrix(self.conn, DAY, None)
-        self.assertIn(2, [r["agent_id"] for r in m["rows"]])
+        self.assertNotIn(2, [r["agent_id"] for r in m["rows"]])
+        self.assertEqual(m["grand_total"], before - n2)
+        self.assertNotIn(2, [r["agent_id"] for r in dashboard.agent_performance(self.conn, DAY, None)])
+        self.assertNotIn(2, [s["agent_id"] for s in dashboard.daily_trend(self.conn, DAY, None)["series"]])
+        self.assertIsNotNone(dashboard.agent_detail(self.conn, 2, DAY))  # 직접 고르면 볼 수는 있음
 
     def test_agent_detail(self):
         d = dashboard.agent_detail(self.conn, 1, DAY)

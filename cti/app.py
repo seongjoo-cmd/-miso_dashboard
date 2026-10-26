@@ -434,9 +434,22 @@ def make_handler(cfg: Config):
                     except ValueError as e:
                         raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
             if method == "GET" and path == "/api/agents":
+                if q.get("all") == "1" and user["role"] == "admin":  # 관리 화면: 숨긴 에이전트까지
+                    rows = conn.execute("SELECT id, name, extension, active FROM agents ORDER BY name").fetchall()
+                    return self._send_json(200, [{**dict(r), "active": bool(r["active"])} for r in rows])
                 rows = conn.execute(
                     "SELECT id, name, extension FROM agents WHERE active = 1 ORDER BY name").fetchall()
                 return self._send_json(200, [dict(r) for r in rows])
+            m = re.fullmatch(r"/api/agents/(\d+)/active", path)
+            if m and method == "POST":
+                if user["role"] != "admin":
+                    raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 바꿀 수 있어요.")
+                cur = conn.execute("UPDATE agents SET active = ? WHERE id = ?",
+                                   (1 if self._read_json().get("active") else 0, int(m.group(1))))
+                conn.commit()
+                if not cur.rowcount:
+                    raise ApiError(HTTPStatus.NOT_FOUND, "에이전트를 찾을 수 없어요.")
+                return self._send_json(200, {"ok": True})
             if path == "/api/settings":
                 if method == "POST":
                     if user["role"] != "admin":

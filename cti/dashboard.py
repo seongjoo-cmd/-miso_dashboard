@@ -27,6 +27,8 @@ def _where(p: Period, agent_id: int | None, col: str = "") -> tuple[str, list]:
     if agent_id is not None:
         sql += f" AND {col}agent_id = ?"
         args.append(agent_id)
+    else:  # 관리에서 숨긴 에이전트(테스트·퇴사자 등)는 전체 통계에서 뺀다. 녹취 목록에서는 계속 찾을 수 있음
+        sql += f" AND {col}agent_id IN (SELECT id FROM agents WHERE active = 1)"
     return sql, args
 
 
