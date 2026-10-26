@@ -110,6 +110,9 @@ class IngestTest(unittest.TestCase):
         self.assertEqual([r["contracted"] for r in self.calls()], [0, 1])
         ingest.mark_contracts(self.conn, ["f1", 3, None])
         self.assertEqual([r["contracted"] for r in self.calls()], [1, 1])
+        # 바로가기가 통화로 잘못 들어간 것 → 지움
+        self.assertEqual(ingest.drop_drive_files(self.conn, ["f2", None]), 1)
+        self.assertEqual([r["drive_file_id"] for r in self.calls()], ["f1"])
 
 
 if __name__ == "__main__":

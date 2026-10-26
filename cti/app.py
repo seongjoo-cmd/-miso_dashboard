@@ -319,6 +319,11 @@ def make_handler(cfg: Config):
                 if len(contracts) > ingest.MAX_CONTRACTS:
                     raise ApiError(HTTPStatus.BAD_REQUEST, f"contracts 는 {ingest.MAX_CONTRACTS}개 이하 목록이어야 해요.")
                 ingest.mark_contracts(conn, contracts)
+            shortcuts = body.get("shortcuts")
+            if isinstance(shortcuts, list):
+                if len(shortcuts) > ingest.MAX_CONTRACTS:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, f"shortcuts 는 {ingest.MAX_CONTRACTS}개 이하 목록이어야 해요.")
+                ingest.drop_drive_files(conn, shortcuts)
             return self._send_json(200, {"added": s["added"], "already": s["already"]})
 
         def _login_response(self, conn, token: str):

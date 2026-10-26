@@ -168,30 +168,41 @@ function syncNew_(started, budget) {
     else st.more = true;
   }
 
+  // 계약완료 폴더로 옮긴 녹취는 생성 시각이 그대로라 위에서 안 잡힘 → 파일 ID 목록을 따로 알림.
+  // 바로가기는 가리키는 원래 녹취에 표시하고, 예전에 통화로 잘못 들어간 바로가기는 지우게 알림
+  const c = contractIds_(scopes);
+  for (let i = 0; i < Math.max(c.ids.length, c.shortcuts.length); i += 1000) {
+    post_({ files: [], first: false, contracts: c.ids.slice(i, i + 1000), shortcuts: c.shortcuts.slice(i, i + 1000) });
+  }
+
   // 2) 지난 녹취를 최근 것부터
   while (before !== 'done' && timeLeft()) {
     // 드라이브마다 before 이전 최근 파일 BATCH 개(_백업 등 에이전트 폴더 밖 파일 포함) → 합쳐서 최근 BATCH 개
     const raw = [];
-    scopes.forEach(function (s) { olderFiles_(s, before).forEach(function (x) { raw.push(x); }); });
+    let full = false;  // 어느 쪽이든 BATCH 개를 꽉 채워 왔으면 그 뒤에 같은 시각 파일이 더 있을 수 있음
+    scopes.forEach(function (s) { const r = olderFiles_(s, before); full = full || r.length >= BATCH; r.forEach(function (x) { raw.push(x); }); });
     if (!raw.length) { before = 'done'; break; }
     raw.sort(function (a, b) { return a.f.createdTime > b.f.createdTime ? -1 : 1; });
     let n = Math.min(BATCH, raw.length);
-    while (n < raw.length && raw[n].f.createdTime === raw[n - 1].f.createdTime) n++;  // 같은 시각 파일은 한 묶음으로
+    const last = raw[n - 1].f.createdTime;
+    let next = last;
+    if (full && raw[0].f.createdTime !== last) {
+      // 경계의 같은 시각 파일은 이번에 안 보내고 다음 묶음에서 한꺼번에(before 를 1ms 뒤로)
+      while (n > 0 && raw[n - 1].f.createdTime === last) n--;
+      next = new Date(Date.parse(last) + 1).toISOString();
+    } else {
+      while (n < raw.length && raw[n].f.createdTime === last) n++;
+    }
     const chunk = [];
     raw.slice(0, n).forEach(function (x) { if (x.d) pushFile_(chunk, x.f, x.d); });
     if (chunk.length) send_(chunk, st);
-    before = raw[n - 1].f.createdTime;
+    before = next;
     props.setProperty('before', before);
   }
   props.setProperty('before', before);
   if (st.first) send_([], st);  // 보낼 게 없어도 폴더 목록·이번 회차 결과는 알림
   if (before !== 'done') st.more = true;
 
-  // 계약완료 폴더로 옮긴 녹취는 생성 시각이 그대로라 위에서 안 잡힘 → 파일 ID 목록을 따로 알림
-  if (timeLeft()) {
-    const ids = contractIds_(scopes);
-    for (let i = 0; i < ids.length; i += 1000) post_({ files: [], first: false, contracts: ids.slice(i, i + 1000) });
-  }
   console.log('보낸 파일 ' + st.sent + ' (새로 추가 ' + st.added + ')' + (before === 'done' ? ' · 지난 녹취 모두 보냄' : ' · 지난 녹취는 ' + before + ' 이전부터 이어서'));
   return { sent: st.sent, added: st.added, more: !!st.more };
 }
@@ -205,7 +216,7 @@ function send_(chunk, st) {
   st.sent += chunk.length;
 }
 
-const FILE_FIELDS = 'id,name,size,createdTime,parents,videoMediaMetadata(durationMillis)';
+const FILE_FIELDS = 'id,name,size,createdTime,parents,videoMediaMetadata(durationMillis),shortcutDetails(targetId)';
 const NOT_FOLDER = "trashed = false and mimeType != 'application/vnd.google-apps.folder'";
 
 /**
@@ -301,7 +312,7 @@ function folderTree_(dirs) {
 }
 
 function pushFile_(out, f, d) {
-  if (!AUDIO.test(f.name)) return;
+  if (!AUDIO.test(f.name) || f.shortcutDetails) return;  // 바로가기는 통화가 아님(원래 녹취가 따로 있음)
   out.push({
     id: f.id, agent: d.agent, name: f.name, size: Number(f.size || 0), created: f.createdTime,
     durationMs: f.videoMediaMetadata && f.videoMediaMetadata.durationMillis
@@ -325,15 +336,20 @@ function agentFolders_() {
   return out;
 }
 
+/** 계약완료 폴더의 녹취 ID(바로가기면 가리키는 원래 녹취 ID)와 바로가기 자체의 ID */
 function contractIds_(scopes) {
-  const ids = [];
+  const out = { ids: [], shortcuts: [] };
   scopes.forEach(function (s) {
     Object.keys(s.folders).forEach(function (id) {
       if (!s.folders[id].contract) return;
-      listFiles_(id, null).forEach(function (f) { if (AUDIO.test(f.name)) ids.push(f.id); });
+      listFiles_(id, null).forEach(function (f) {
+        if (!AUDIO.test(f.name)) return;
+        if (f.shortcutDetails) { out.ids.push(f.shortcutDetails.targetId); out.shortcuts.push(f.id); }
+        else out.ids.push(f.id);
+      });
     });
   });
-  return ids;
+  return out;
 }
 
 const BACKUP_BUDGET_MS = 200000;    // 백업에 쓰는 최대 시간(나머지는 새 녹취 보내기)
@@ -409,7 +425,7 @@ function call_(method, path, body) {
 
 function walk_(folderId, agent, since, out, contract) {
   listFiles_(folderId, since).forEach(function (f) {
-    if (!AUDIO.test(f.name)) return;
+    if (!AUDIO.test(f.name) || f.shortcutDetails) return;
     out.push({
       id: f.id, agent: agent, name: f.name, size: Number(f.size || 0), created: f.createdTime,
       durationMs: f.videoMediaMetadata && f.videoMediaMetadata.durationMillis
@@ -431,7 +447,7 @@ function listChildren_(folderId, foldersOnly) {
 function listFiles_(folderId, since) {
   let q = "'" + folderId + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'";
   if (since) q += " and createdTime > '" + since + "'";
-  return driveList_(q, 'files(id,name,size,createdTime,videoMediaMetadata(durationMillis))');
+  return driveList_(q, 'files(' + FILE_FIELDS + ')');
 }
 
 function driveList_(q, fields, driveId) {

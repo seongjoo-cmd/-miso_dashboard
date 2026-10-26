@@ -298,6 +298,7 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
             stats["added"] += 1
         stats["agents"] = len(agents)
         conn.commit()
+    batch = {"added": stats["added"], "already": stats["already"]}
     if not first:
         prev = last_result(conn) or {}
         for k in ("added", "already", "recent", "not_audio"):
@@ -306,7 +307,7 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
         stats["failed_total"] = prev.get("failed_count", 0) + len(stats["failed"])
         stats["failed"] = prev.get("failed", []) + stats["failed"]  # 화면에는 앞의 20개만
     record_result(conn, stats)
-    return stats
+    return batch  # 이번 묶음만(누적은 last_ingest) — 스크립트가 더해도 두 번 세지 않게
 
 
 MAX_CONTRACTS = 5000
@@ -326,6 +327,19 @@ def mark_contracts(conn: sqlite3.Connection, file_ids: list) -> int:
             cur = conn.execute(
                 "UPDATE calls SET contracted = 1 WHERE contracted = 0 AND drive_file_id IN "
                 f"({','.join('?' * len(chunk))})", chunk)
+            n += max(cur.rowcount, 0)
+        conn.commit()
+    return n
+
+
+def drop_drive_files(conn: sqlite3.Connection, file_ids: list) -> int:
+    """드라이브 바로가기처럼 통화가 아닌데 예전에 통화로 들어간 파일 → 그 통화 기록을 지운다(원래 녹취는 그대로)."""
+    ids = [i for i in file_ids if isinstance(i, str) and i]
+    n = 0
+    with _lock:
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            cur = conn.execute(f"DELETE FROM calls WHERE drive_file_id IN ({','.join('?' * len(chunk))})", chunk)
             n += max(cur.rowcount, 0)
         conn.commit()
     return n
