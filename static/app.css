@@ -213,6 +213,17 @@ h1, h2, h3, p { margin: 0; }
 .chips-sm .chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .chips-sm .chip[aria-pressed="true"] { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--c); color: var(--text); }
 
+/* ---------- 고객 터치 분석 ---------- */
+.insights { display: grid; gap: 8px; margin-bottom: 20px; }
+.insights li {
+  padding: 14px 16px 14px 40px; border-radius: var(--radius-sm); background: var(--fill);
+  color: var(--text); font-size: 15px; line-height: 1.5; position: relative;
+}
+.insights li::before { content: "💡"; position: absolute; left: 14px; top: 13px; }
+.touch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.touch-h { font-size: 15px; font-weight: 700; color: var(--text-2); margin-bottom: 10px; }
+@media (max-width: 720px) { .touch-grid { grid-template-columns: minmax(0, 1fr); } }
+
 /* ---------- 세그먼트(정렬 탭) ---------- */
 .seg { display: flex; background: var(--fill); border-radius: 12px; padding: 4px; margin-bottom: 8px; }
 .seg button { flex: 1; border: 0; background: transparent; height: 34px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--text-3); white-space: nowrap; }

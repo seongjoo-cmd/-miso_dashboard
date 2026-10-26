@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import auth, signup, backup, calls, dashboard, demo, drive_backup, ingest, slack, uploads
+from . import auth, signup, backup, calls, dashboard, demo, drive_backup, ingest, slack, touches, uploads
 from .db import connect, get_setting, get_setting_int, set_setting
 from .periods import PRESETS, resolve
 
@@ -521,6 +521,9 @@ def make_handler(cfg: Config):
                 self._read_json()
                 ingest.ingest_all(conn, cfg.sync_root)
                 return self._send_json(200, _settings_payload(conn))
+            if method == "GET" and path == "/api/analysis":
+                cur, _ = _parse_period(cfg, q)
+                return self._send_json(200, touches.analyze(conn, cur, _parse_agent(q)))
             if method == "GET" and path == "/api/dashboard":
                 cur, prev = _parse_period(cfg, q)
                 return self._send_json(200, dashboard.build(conn, cur, prev, _parse_agent(q)))

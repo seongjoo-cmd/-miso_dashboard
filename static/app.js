@@ -270,7 +270,7 @@
   }
 
   // ---------- 메뉴 ----------
-  const VIEWS = ["calls", "stats", "settings", "admin"];
+  const VIEWS = ["calls", "stats", "analysis", "settings", "admin"];
   let dashboardStale = true;
   let callsLoaded = false;
   async function route() {
@@ -284,6 +284,9 @@
     });
     $("#calls-view").hidden = view !== "calls";
     $("#dashboard-view").hidden = view !== "stats";
+    $("#analysis-view").hidden = view !== "analysis";
+    // 기간·에이전트 필터는 하나 — 보이는 화면 맨 위로 옮김
+    if (view === "stats" || view === "analysis") $(view === "stats" ? "#dashboard-view" : "#analysis-view").prepend($(".filterbar"));
     $("#settings-view").hidden = view !== "settings";
     $("#admin-view").hidden = view !== "admin";
     closeSheet();
@@ -293,6 +296,8 @@
       if (!callsLoaded || dashboardStale) { callsLoaded = true; await loadCalls(); }
     } else if (view === "stats") {
       if (dashboardStale) { dashboardStale = false; await load(); }
+    } else if (view === "analysis") {
+      await loadAnalysis();
     } else if (view === "admin") {
       await loadUsers();
     } else {
@@ -387,6 +392,7 @@
   // ---------- 불러오기 ----------
   let loadSeq = 0;
   async function load() {
+    if (!$("#analysis-view").hidden) { dashboardStale = true; return loadAnalysis(); }  // 분석 화면에서 필터를 바꿈
     const seq = ++loadSeq;
     const q = periodQuery();
     if (state.agentId) q.set("agent_id", state.agentId);
@@ -395,6 +401,18 @@
       if (seq !== loadSeq) return;
       state.data = data;
       render();
+    } catch (err) {
+      if (state.user) toast(err.message);
+    }
+  }
+  let analysisSeq = 0;
+  async function loadAnalysis() {
+    const seq = ++analysisSeq;
+    const q = periodQuery();
+    if (state.agentId) q.set("agent_id", state.agentId);
+    try {
+      const t = await api(`/api/analysis?${q}`);
+      if (seq === analysisSeq) renderTouch(t);
     } catch (err) {
       if (state.user) toast(err.message);
     }
@@ -575,6 +593,63 @@
         }],
       },
       options: opts,
+    });
+  }
+
+  // ---------- 고객 컨택 분석 ----------
+  function renderTouch(t) {
+    const s = t.summary, decided = s.contract + s.fail;
+    $("#touch-caption").textContent = `계약 ${fmtInt(s.contract)} · 실패 ${fmtInt(s.fail)} · 진행 ${fmtInt(s.open)}`
+      + ` (실패: ${t.fail_days}일 무응답)`;
+    $("#touch-insights").replaceChildren(...(decided ? t.insights : ["이 기간에는 분석할 고객이 없어요."])
+      .map((x) => el("li", {}, x)));
+    $("#touch-charts").hidden = !decided;
+    if (!decided) return;
+
+    const blue = css("--blue"), gray = isDark() ? "#4e5968" : "#d1d6db", ink = css("--text-2");
+    const o1 = baseOptions();
+    o1.plugins.legend = { display: true, position: "bottom", labels: { usePointStyle: true, boxWidth: 8, color: css("--text-3") } };
+    o1.plugins.tooltip.displayColors = true;
+    o1.interaction = { mode: "index", intersect: false };
+    o1.plugins.tooltip.callbacks = {
+      title: (items) => `${t.touch_labels[items[0].dataIndex]} 컨택`,
+      label: (item) => (item.dataset.yAxisID === "y1" ? ` 누적 계약률 ${item.raw ?? 0}%` : ` ${item.dataset.label} ${fmtInt(item.raw)}명`),
+    };
+    o1.scales.y1 = { position: "right", min: 0, max: 100, grid: { display: false }, border: { display: false },
+      ticks: { color: css("--text-3"), callback: (v) => `${v}%`, maxTicksLimit: 5 } };
+    upsert("touch-chart", {
+      type: "bar",
+      data: {
+        labels: t.touch_labels,
+        datasets: [
+          { label: "계약", data: t.by_touch.contract, backgroundColor: blue, borderRadius: 6, borderSkipped: false, order: 2 },
+          { label: "실패", data: t.by_touch.fail, backgroundColor: gray, borderRadius: 6, borderSkipped: false, order: 3 },
+          { label: "누적 계약률", type: "line", data: t.contract_cum_pct, yAxisID: "y1", borderColor: ink,
+            backgroundColor: ink, borderWidth: 2, pointRadius: 3, tension: 0.3, order: 1 },
+        ],
+      },
+      options: o1,
+    });
+
+    const rates = t.gap_contract_rate, best = Math.max(...rates.map((v) => v ?? -1));
+    const o2 = baseOptions();
+    o2.scales.y.max = 100;
+    o2.scales.y.ticks.callback = (v) => `${v}%`;
+    o2.plugins.tooltip.callbacks = {
+      title: (items) => `컨택 간격 ${t.gap_labels[items[0].dataIndex]}`,
+      label: (item) => [`계약률 ${item.raw ?? 0}%`, `고객 ${fmtInt(t.gap_customers[item.dataIndex])}명`],
+    };
+    upsert("gap-chart", {
+      type: "bar",
+      data: {
+        labels: t.gap_labels,
+        datasets: [{
+          data: rates.map((v) => v ?? 0), borderRadius: 6, borderSkipped: false,
+          backgroundColor: rates.map((v) => (v != null && v === best ? blue : (isDark() ? "#2b4a75" : "#c9e2ff"))),
+          hoverBackgroundColor: blue,
+        }],
+      },
+      options: o2,
     });
   }
 

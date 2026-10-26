@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261026-2">
+  <link rel="stylesheet" href="/static/app.css?v=20261026-3">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -62,6 +62,7 @@
         <nav class="tabs-top" aria-label="메뉴">
           <a class="nav-item" href="#calls" data-view="calls">녹취</a>
           <a class="nav-item" href="#stats" data-view="stats">통계</a>
+          <a class="nav-item" href="#analysis" data-view="analysis">분석</a>
           <a class="nav-item" href="#settings" data-view="settings">설정</a>
           <a class="nav-item" href="#admin" data-view="admin" hidden>관리</a>
         </nav>
@@ -198,6 +199,7 @@
           </div>
           <div class="chart-box"><canvas id="hourly-chart" aria-label="시간대별 통화 분포"></canvas></div>
         </section>
+
 
         <!-- 에이전트 순위 -->
         <section class="card rank-card">
@@ -347,6 +349,32 @@
       </section>
     </main>
 
+    <!-- 분석(기간·에이전트 필터는 통계 화면 것을 옮겨 와 같이 씀) -->
+    <main class="page" id="analysis-view" hidden>
+      <div class="grid">
+          <!-- 고객 컨택 분석 -->
+          <section class="card span-3" id="touch-card">
+            <div class="card-head">
+              <div>
+                <h2>고객 컨택 분석</h2>
+                <p class="caption" id="touch-caption"></p>
+              </div>
+            </div>
+            <ul class="insights" id="touch-insights"></ul>
+            <div class="touch-grid" id="touch-charts">
+              <div>
+                <h3 class="touch-h">컨택 횟수별 결과</h3>
+                <div class="chart-box"><canvas id="touch-chart" aria-label="컨택 횟수별 계약·실패 고객 수"></canvas></div>
+              </div>
+              <div>
+                <h3 class="touch-h">컨택 간격별 계약률</h3>
+                <div class="chart-box"><canvas id="gap-chart" aria-label="컨택 간격별 계약률"></canvas></div>
+              </div>
+            </div>
+          </section>
+      </div>
+    </main>
+
     <!-- 모바일 하단 탭 -->
     <nav class="tabbar" aria-label="메뉴">
       <a class="tab nav-item" href="#calls" data-view="calls">
@@ -356,6 +384,10 @@
       <a class="tab nav-item" href="#stats" data-view="stats">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M5 20V10h3v10H5Zm5.5 0V4h3v16h-3Zm5.5 0v-7h3v7h-3Z"/></svg>
         <span>통계</span>
+      </a>
+      <a class="tab nav-item" href="#analysis" data-view="analysis">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9 21h6v-1.5H9V21Zm3-19a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2Z"/></svg>
+        <span>분석</span>
       </a>
       <a class="tab nav-item" href="#settings" data-view="settings">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.3 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.3-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5-2.1-1.6ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
@@ -439,6 +471,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261026-6"></script>
+  <script src="/static/app.js?v=20261026-10"></script>
 </body>
 </html>

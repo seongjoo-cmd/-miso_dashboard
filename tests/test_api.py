@@ -91,6 +91,13 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.req("GET", "/api/dashboard?preset=custom&start=x&end=y", token=t)[0], 400)
         self.assertEqual(self.req("GET", "/api/dashboard?agent_id=abc", token=t)[0], 400)
 
+    def test_analysis(self):
+        t = self.login("viewer", "pw-viewer")
+        status, d, _ = self.req("GET", "/api/analysis?preset=this_month", token=t)
+        self.assertEqual(status, 200, d)
+        self.assertIn("insights", d)
+        self.assertNotIn("touch", self.req("GET", "/api/dashboard?preset=today", token=t)[1])
+
     def test_viewer_cannot_see_or_run_backup(self):
         t = self.login("viewer", "pw-viewer")
         status, d, _ = self.req("GET", "/api/agents/1?preset=today", token=t)
