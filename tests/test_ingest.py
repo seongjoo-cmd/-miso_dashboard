@@ -93,6 +93,26 @@ class IngestTest(unittest.TestCase):
         names = [r[0] for r in self.conn.execute("SELECT name FROM agents ORDER BY id")]
         self.assertEqual(names, ["박지우", "신규"])
 
+    def test_contract_folder(self):
+        f = self.root / "김민지" / "01011112222_20261012_090000.wav"
+        write_wav(f, 3)
+        write_wav(self.root / "김민지" / "계약완료" / "01033334444_20261012_100000.wav", 3)
+        ingest.ingest_all(self.conn, self.root)
+        self.assertEqual([r["contracted"] for r in self.calls()], [0, 1])
+        # 이미 들어온 녹취를 계약완료 폴더로 옮기면 새로 넣지 않고 표시만
+        dest = self.root / "김민지" / "계약완료" / f.name
+        f.rename(dest)
+        s = ingest.ingest_all(self.conn, self.root)
+        self.assertEqual(s["added"], 0)
+        self.assertEqual([r["contracted"] for r in self.calls()], [1, 1])
+
+    def test_drive_contract(self):
+        rec = {"id": "f1", "agent": "김민지", "name": "01011112222_20261012_090000.m4a", "size": 1, "durationMs": 1000}
+        ingest.ingest_records(self.conn, [rec, {**rec, "id": "f2", "contract": True}])
+        self.assertEqual([r["contracted"] for r in self.calls()], [0, 1])
+        ingest.mark_contracts(self.conn, ["f1", 3, None])
+        self.assertEqual([r["contracted"] for r in self.calls()], [1, 1])
+
 
 if __name__ == "__main__":
     unittest.main()

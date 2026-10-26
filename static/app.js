@@ -747,13 +747,14 @@
   }
   function resetLookup() {
     [cs.start, cs.end] = quickRange("today");
-    Object.assign(cs, { hfrom: 0, hto: 24, agentId: "", num: "", hideShort: false, sameAs: null });
+    Object.assign(cs, { hfrom: 0, hto: 24, agentId: "", num: "", hideShort: false, contractOnly: false, sameAs: null });
     fillLookup();
   }
   function fillLookup() {
     $("#lk-start").value = cs.start; $("#lk-end").value = cs.end;
     $("#lk-hfrom").value = cs.hfrom; $("#lk-hto").value = cs.hto;
     $("#lk-agent").value = cs.agentId; $("#lk-num").value = cs.num; $("#lk-short").checked = cs.hideShort;
+    $("#lk-contract").checked = cs.contractOnly;
     markQuickDate();
   }
   function markQuickDate() {
@@ -885,7 +886,7 @@
       err.textContent = "고객번호는 전체 번호나 뒤 4자리로 넣어 주세요."; return;
     }
     Object.assign(cs, { start: s, end: en, hfrom: hf, hto: ht, agentId: $("#lk-agent").value, num,
-      hideShort: $("#lk-short").checked, sameAs: null });
+      hideShort: $("#lk-short").checked, contractOnly: $("#lk-contract").checked, sameAs: null });
     $("#lk-num").blur();
     loadCalls().then(() => {
       // 휴대폰: 조회 후 결과가 보이게 스크롤
@@ -903,6 +904,7 @@
     if (cs.sameAs) p.set("same_as", cs.sameAs);
     else if (cs.num) p.set("q", cs.num);
     if (cs.hideShort && state.minSec) p.set("min_sec", state.minSec);
+    if (cs.contractOnly) p.set("contract", "1");
     if (cursor) p.set("cursor", cursor);
     return p;
   }
@@ -917,6 +919,7 @@
     if (cs.agentId) parts.push($(`#lk-agent option[value="${cs.agentId}"]`)?.textContent || "에이전트");
     if (cs.num) parts.push(`‘${cs.num}’`);
     if (cs.hideShort) parts.push("짧은 통화 제외");
+    if (cs.contractOnly) parts.push("계약완료만");
     return parts.join(" · ");
   }
 
@@ -977,6 +980,7 @@
       el("span", { class: "call-main" },
         el("div", { class: `call-num${c.customer_masked ? "" : " none"}` }, c.customer_masked || "번호 없음"),
         el("div", { class: "call-agent" }, `${c.agent_name} 에이전트`)),
+      c.contracted ? el("span", { class: "contract-badge" }, "계약") : null,
       el("span", { class: `call-dur${c.duration_sec < minSec ? " short" : ""}` }, fmtDur(c.duration_sec)),
       el("span", { class: `play-ic${c.playable ? "" : " off"}`, "aria-label": c.playable ? "재생 가능" : "재생 불가" },
         playIcon())));
@@ -1049,7 +1053,8 @@
       row("통화 시작", dateTimeKo(d.started_at)),
       row("통화 시간", `${fmtDur(d.duration_sec)}${d.duration_estimated ? " (추정)" : ""}`),
       row("에이전트", `${d.agent_name}${d.extension ? ` · 내선 ${d.extension}` : ""}`),
-      row("고객번호", d.customer_masked || "없음"));
+      row("고객번호", d.customer_masked || "없음"),
+      ...(d.contracted ? [row("계약", "계약 완료")] : []));
 
     const same = $("#call-same");
     same.hidden = !d.customer_masked || d.same_customer_calls < 2;
@@ -1235,14 +1240,15 @@
   $("#drive-copy").addEventListener("click", async () => {
     const msg = $("#drive-msg");
     const raw = $("#drive-folder").value.trim();
-    const m = /folders\/([A-Za-z0-9_-]{10,})/.exec(raw) || /^([A-Za-z0-9_-]{10,})$/.exec(raw);
-    if (!m) {
+    // 주소 여러 개(드라이브 여러 개)는 쉼표·띄어쓰기로 이어서
+    const ids = raw.split(/[\s,]+/).map((s) => (/folders\/([A-Za-z0-9_-]{10,})/.exec(s) || /^([A-Za-z0-9_-]{10,})$/.exec(s))?.[1]).filter(Boolean);
+    if (!ids.length) {
       msg.className = "form-msg err"; msg.textContent = "녹취 폴더 주소를 먼저 붙여넣어 주세요."; $("#drive-folder").focus(); return;
     }
     try { localStorage.setItem("cti.driveFolder", raw); } catch { /* 무시 */ }
     try {
       const { script } = await api("/api/drive/script");
-      await navigator.clipboard.writeText(script.replace("'여기에_녹취_폴더_ID'", `'${m[1]}'`));
+      await navigator.clipboard.writeText(script.replace("['여기에_녹취_폴더_ID']", JSON.stringify([...new Set(ids)]).replaceAll('"', "'")));
       msg.className = "form-msg ok"; msg.textContent = "복사했어요. script.google.com 에 붙여넣어 주세요.";
     } catch (err) {
       msg.className = "form-msg err";

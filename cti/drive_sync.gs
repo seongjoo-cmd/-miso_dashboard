@@ -3,7 +3,7 @@
  *
  * 쓰는 법 (한 번만)
  *  1. script.google.com → 새 프로젝트 → 이 코드를 통째로 붙여넣기
- *  2. 아래 FOLDER_ID 에 녹취 폴더 주소의 마지막 부분을 넣기
+ *  2. 아래 FOLDER_IDS 에 녹취 폴더 주소의 마지막 부분을 넣기(드라이브가 여러 개면 쉼표로 이어서)
  *     (https://drive.google.com/drive/folders/여기부분)
  *  3. 위쪽 함수 목록에서 '설치' 선택 → 실행 → 권한 허용
  *  이후 5분마다 새 녹취를 대시보드로 보냅니다. 녹취 파일 자체는 드라이브에 그대로 있어요.
@@ -12,12 +12,15 @@
  *  실행 '나', 액세스 '회사의 모든 사용자'(또는 '모든 사용자') → 배포 → 나온 웹 앱 URL 을
  *  대시보드 설정에 붙여넣기.
  *
+ *  에이전트 폴더 안 '계약완료' 폴더에 넣은 녹취는 대시보드에 '계약'으로 표시돼요(옮겨도 돼요).
+ *
  *  대시보드에서 '백업하고 비우기'를 누르면, 다음 실행 때 그 에이전트 폴더의 녹취를
  *  같은 폴더 안 '_백업/에이전트' 폴더로 옮깁니다(지우지 않음, 계속 재생 가능).
  */
 const CTI_URL = '{{CTI_URL}}';
 const CTI_TOKEN = '{{CTI_TOKEN}}';
-const FOLDER_ID = '여기에_녹취_폴더_ID';
+const FOLDER_IDS = ['여기에_녹취_폴더_ID'];
+const CONTRACT_DIR = '계약완료';  // 에이전트 폴더 안 이 폴더의 녹취 = 계약 완료 건
 
 const AUDIO = /\.(m4a|mp4|3gp|3ga|aac|mp3|wav|amr|ogg|opus|wma)$/i;
 const BATCH = 200;              // 한 번에 보내는 파일 수
@@ -28,7 +31,7 @@ function 설치() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('동기화').timeBased().everyMinutes(5).create();
   PropertiesService.getScriptProperties().deleteProperty('since');
-  DriveApp.getFolderById(FOLDER_ID.trim()); // 폴더 접근 권한 확인
+  roots_().forEach(function (id) { DriveApp.getFolderById(id); }); // 폴더 접근 권한 확인
   동기화();
 }
 
@@ -134,7 +137,7 @@ function syncNew_(started, budget) {
   // 최상위 폴더 바로 아래 폴더 이름 = 에이전트
   const dirs = agentFolders_();
   dirs.forEach(function (agentDir) {
-    walk_(agentDir.id, agentDir.name, since, files);
+    walk_(agentDir.id, agentDir.name, since, files, false);
   });
   files.sort(function (a, b) { return a.created < b.created ? -1 : 1; });
 
@@ -156,12 +159,41 @@ function syncNew_(started, budget) {
   } else if (newest) {
     props.setProperty('since', newest);
   }
+  // 계약완료 폴더로 옮긴 녹취는 생성 시각이 그대로라 위에서 안 잡힘 → 파일 ID 목록을 따로 알림
+  if (Date.now() - started < budget) {
+    const ids = contractIds_(dirs);
+    for (let i = 0; i < ids.length; i += 1000) post_({ files: [], first: false, contracts: ids.slice(i, i + 1000) });
+  }
   console.log('보낸 파일 ' + sent + ' / 찾은 파일 ' + files.length + ' (새로 추가 ' + added + ')');
   return { sent: sent, found: files.length, added: added };
 }
 
+function roots_() {
+  return FOLDER_IDS.map(function (id) { return String(id).trim(); }).filter(String);
+}
+
+/** 각 녹취 폴더 바로 아래 폴더들(= 에이전트). root: 그 폴더가 있는 녹취 폴더 ID(백업 위치) */
 function agentFolders_() {
-  return listChildren_(FOLDER_ID.trim(), true).filter(function (f) { return f.name.charAt(0) !== '_'; });
+  const out = [];
+  roots_().forEach(function (root) {
+    listChildren_(root, true).forEach(function (f) {
+      if (f.name.charAt(0) !== '_') out.push({ id: f.id, name: f.name, root: root });
+    });
+  });
+  return out;
+}
+
+function contractIds_(dirs) {
+  const ids = [];
+  dirs.forEach(function (d) {
+    listChildren_(d.id, true).forEach(function (sub) {
+      if (sub.name.trim() !== CONTRACT_DIR) return;
+      const files = [];
+      walk_(sub.id, d.name, null, files, true);
+      files.forEach(function (f) { ids.push(f.id); });
+    });
+  });
+  return ids;
 }
 
 const BACKUP_BUDGET_MS = 200000;    // 백업에 쓰는 최대 시간(나머지는 새 녹취 보내기)
@@ -189,25 +221,29 @@ function runBackups_(started, budget) {
 }
 
 function backupOne_(t, started, budget) {
-  const dir = agentFolders_().filter(function (f) { return f.name === t.agent; })[0];
-  if (!dir) {
+  // 같은 이름 에이전트 폴더가 여러 드라이브에 있으면 모두 처리
+  const dirs = agentFolders_().filter(function (f) { return f.name === t.agent; });
+  if (!dirs.length) {
     call_('post', '/api/drive/tasks/' + t.id, { status: 'done', moved_ids: [], message: '폴더가 없어서 옮길 파일이 없었어요' });
     return;
   }
-  // 1) 옮기기 전에 이 폴더의 녹취를 대시보드에 적재(누락 방지 — 이미 있는 건 대시보드가 건너뜀).
-  //    빠르게 하려고 길이는 드라이브가 알려 준 값만 쓴다(없으면 대시보드가 용량으로 추정).
-  const files = [];
-  walk_(dir.id, t.agent, null, files);
-  for (let i = 0; i < files.length; i += BATCH) post_({ files: files.slice(i, i + BATCH), first: false });
-  // 2) _백업/에이전트 폴더로 옮기기
-  const dest = ensureFolder_(ensureFolder_(DriveApp.getFolderById(FOLDER_ID.trim()), BACKUP_DIR), t.agent);
   const moved = [];
   let failed = 0, lastError = null, done = true;
-  for (let i = 0; i < files.length; i++) {
-    if (Date.now() - started > budget) { done = false; break; }
-    try { DriveApp.getFileById(files[i].id).moveTo(dest); moved.push(files[i].id); }
-    catch (e) { failed++; lastError = String(e); }
-  }
+  dirs.forEach(function (dir) {
+    if (!done) return;
+    // 1) 옮기기 전에 이 폴더의 녹취를 대시보드에 적재(누락 방지 — 이미 있는 건 대시보드가 건너뜀).
+    //    빠르게 하려고 길이는 드라이브가 알려 준 값만 쓴다(없으면 대시보드가 용량으로 추정).
+    const files = [];
+    walk_(dir.id, t.agent, null, files, false);
+    for (let i = 0; i < files.length; i += BATCH) post_({ files: files.slice(i, i + BATCH), first: false });
+    // 2) 그 드라이브의 _백업/에이전트 폴더로 옮기기
+    const dest = ensureFolder_(ensureFolder_(DriveApp.getFolderById(dir.root), BACKUP_DIR), t.agent);
+    for (let i = 0; i < files.length; i++) {
+      if (Date.now() - started > budget) { done = false; break; }
+      try { DriveApp.getFileById(files[i].id).moveTo(dest); moved.push(files[i].id); }
+      catch (e) { failed++; lastError = String(e); }
+    }
+  });
   console.log(t.agent + ': ' + moved.length + '개 옮김' + (failed ? ', ' + failed + '개 실패' : '') + (done ? '' : ' (다음 회차에 이어서)'));
   call_('post', '/api/drive/tasks/' + t.id, {
     status: !done ? 'progress' : (failed && !moved.length ? 'failed' : 'done'),
@@ -231,16 +267,19 @@ function call_(method, path, body) {
   return res;
 }
 
-function walk_(folderId, agent, since, out) {
+function walk_(folderId, agent, since, out, contract) {
   listFiles_(folderId, since).forEach(function (f) {
     if (!AUDIO.test(f.name)) return;
     out.push({
       id: f.id, agent: agent, name: f.name, size: Number(f.size || 0), created: f.createdTime,
       durationMs: f.videoMediaMetadata && f.videoMediaMetadata.durationMillis
         ? Number(f.videoMediaMetadata.durationMillis) : null,
+      contract: contract,
     });
   });
-  listChildren_(folderId, true).forEach(function (sub) { walk_(sub.id, agent, since, out); });
+  listChildren_(folderId, true).forEach(function (sub) {
+    walk_(sub.id, agent, since, out, contract || sub.name.trim() === CONTRACT_DIR);
+  });
 }
 
 function listChildren_(folderId, foldersOnly) {

@@ -314,6 +314,11 @@ def make_handler(cfg: Config):
             if not isinstance(files, list) or len(files) > ingest.MAX_RECORDS:
                 raise ApiError(HTTPStatus.BAD_REQUEST, f"files 는 {ingest.MAX_RECORDS}개 이하 목록이어야 해요.")
             s = ingest.ingest_records(conn, [f for f in files if isinstance(f, dict)], bool(body.get("first", True)))
+            contracts = body.get("contracts")
+            if isinstance(contracts, list):
+                if len(contracts) > ingest.MAX_CONTRACTS:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, f"contracts 는 {ingest.MAX_CONTRACTS}개 이하 목록이어야 해요.")
+                ingest.mark_contracts(conn, contracts)
             return self._send_json(200, {"added": s["added"], "already": s["already"]})
 
         def _login_response(self, conn, token: str):
@@ -502,7 +507,8 @@ def make_handler(cfg: Config):
                     return self._send_json(200, calls.search(
                         conn, period, _parse_agent(q), q.get("q"),
                         _parse_int(q, "same_as"), _parse_int(q, "min_sec"), q.get("cursor"),
-                        hour_from=_parse_int(q, "hour_from"), hour_to=_parse_int(q, "hour_to")))
+                        hour_from=_parse_int(q, "hour_from"), hour_to=_parse_int(q, "hour_to"),
+                        contract_only=q.get("contract") == "1"))
                 except calls.SearchError as e:
                     raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
             m = re.fullmatch(r"/api/calls/(\d+)", path)

@@ -336,6 +336,7 @@ h1, h2, h3, p { margin: 0; }
 .call-agent { font-size: 13px; color: var(--text-3); }
 .call-dur { font-size: 14px; color: var(--text-2); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .call-dur.short { color: var(--text-4); }
+.contract-badge { font-size: 12px; font-weight: 700; color: var(--blue-text); background: var(--blue-weak); border-radius: 6px; padding: 3px 7px; white-space: nowrap; }
 .play-ic { width: 36px; height: 36px; border-radius: 50%; background: var(--blue-weak); color: var(--blue); display: grid; place-items: center; flex: none; }
 .play-ic.off { background: var(--fill); color: var(--text-4); }
 #calls-more { margin-top: 8px; }

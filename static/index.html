@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261014-2">
+  <link rel="stylesheet" href="/static/app.css?v=20261026-1">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -128,6 +128,7 @@
         </div>
 
         <label class="lk-check"><input type="checkbox" id="lk-short"> 짧은 통화 빼기</label>
+        <label class="lk-check"><input type="checkbox" id="lk-contract"> 계약완료만 보기</label>
         <p id="lookup-err" class="form-msg err" role="alert"></p>
         <button type="submit" class="btn btn-primary btn-lg btn-block">조회하기</button>
       </form>
@@ -246,8 +247,8 @@
         <div class="conn-box" id="drive-status" hidden></div>
         <div class="field">
           <label for="drive-folder">녹취 폴더 주소</label>
-          <input id="drive-folder" class="text-input" type="url" inputmode="url" autocomplete="off"
-                 placeholder="https://drive.google.com/drive/folders/…">
+          <input id="drive-folder" class="text-input" type="text" inputmode="url" autocomplete="off"
+                 placeholder="https://drive.google.com/drive/folders/… (여러 개면 쉼표로)">
         </div>
         <ol class="steps">
           <li><b>스크립트 복사</b>를 누르세요.</li>
@@ -423,6 +424,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261014-2"></script>
+  <script src="/static/app.js?v=20261026-1"></script>
 </body>
 </html>

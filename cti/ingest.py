@@ -17,12 +17,21 @@ import re
 import sqlite3
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from .audio import AUDIO_EXTS, duration_sec
 from .db import get_setting, get_setting_int, insert_returning_id, set_setting
+
+# 에이전트 폴더 안 이 이름의 폴더에 있는 녹취 = 계약 완료 건
+CONTRACT_DIR = "계약완료"
+
+
+def is_contract_dir(name: str) -> bool:
+    return unicodedata.normalize("NFC", name.strip()) == CONTRACT_DIR
+
 
 # 동기화 중(아직 쓰는 중)인 파일을 건드리지 않도록, 최근 수정된 파일은 다음 회차로 미룬다.
 MIN_FILE_AGE_SEC = 60
@@ -95,16 +104,17 @@ def source_key(key: bytes, source: str) -> str:
 
 def _insert_call(conn, hk: bytes, agent_id: int, p: Parsed, sec: float, how: str,
                  src_key: str, size: int | None, drive_file_id: str | None = None,
-                 uploaded_at: str | None = None) -> None:
+                 uploaded_at: str | None = None, contracted: bool = False) -> None:
     conn.execute(
         """
         INSERT OR IGNORE INTO calls(agent_id, customer_key, customer_masked, started_at,
                                     duration_sec, duration_source, source_key, file_bytes, drive_file_id,
-                                    uploaded_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    uploaded_at, contracted)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (agent_id, customer_key(hk, p.phone) if p.phone else None, p.masked,
-         p.started_at.isoformat(sep=" "), round(sec), how, src_key, size, drive_file_id, uploaded_at),
+         p.started_at.isoformat(sep=" "), round(sec), how, src_key, size, drive_file_id, uploaded_at,
+         int(contracted)),
     )
 
 
@@ -182,11 +192,28 @@ def _ingest_folder(conn: sqlite3.Connection, folder: Path, now: float | None) ->
         if p is None:
             stats["failed"].append(mask_name(rel))
             continue
+        contracted = any(is_contract_dir(d) for d in f.relative_to(folder).parts[:-1])
+        if contracted and _move_into_contract(conn, hk, agent_id, p, f.stat().st_size, key):
+            stats["already"] += 1
+            continue
         sec, how = duration_sec(f, kbps)
-        _insert_call(conn, hk, agent_id, p, sec, how, key, f.stat().st_size, uploaded_at=_mtime_local(f))
+        _insert_call(conn, hk, agent_id, p, sec, how, key, f.stat().st_size, uploaded_at=_mtime_local(f),
+                     contracted=contracted)
         stats["added"] += 1
     conn.commit()
     return stats
+
+
+def _move_into_contract(conn, hk: bytes, agent_id: int, p: Parsed, size: int, key: str) -> bool:
+    """폴더 방식: 이미 적재된 녹취를 '계약완료' 폴더로 옮긴 것 → 새로 넣지 않고 그 통화에 표시만."""
+    row = conn.execute(
+        "SELECT id FROM calls WHERE agent_id = ? AND started_at = ? AND file_bytes = ? "
+        "AND customer_key IS NOT DISTINCT FROM ? AND contracted = 0 LIMIT 1",
+        (agent_id, p.started_at.isoformat(sep=" "), size, customer_key(hk, p.phone) if p.phone else None),
+    ).fetchone()
+    if row:
+        conn.execute("UPDATE calls SET contracted = 1, source_key = ? WHERE id = ?", (key, row["id"]))
+    return bool(row)
 
 
 def ingest_all(conn: sqlite3.Connection, sync_root: Path, now: float | None = None) -> dict:
@@ -245,6 +272,8 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
             uploaded = local_time(r.get("created"))
             if key in known:
                 stats["already"] += 1
+                if r.get("contract"):
+                    conn.execute("UPDATE calls SET contracted = 1 WHERE source_key = ?", (key,))
                 if uploaded:  # 이 기능 전에 들어온 녹취: 다시 받을 때 올라온 시각을 채운다
                     conn.execute("UPDATE calls SET uploaded_at = ? WHERE source_key = ? AND uploaded_at IS NULL",
                                  (uploaded, key))
@@ -259,7 +288,7 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 sec, how = ms / 1000, "header"
             else:
                 sec, how = (size or 0) * 8 / (max(kbps, 1) * 1000), "size"
-            _insert_call(conn, hk, aid, p, sec, how, key, size, str(r["id"]), uploaded)
+            _insert_call(conn, hk, aid, p, sec, how, key, size, str(r["id"]), uploaded, bool(r.get("contract")))
             known.add(key)
             stats["added"] += 1
         stats["agents"] = len(agents)
@@ -273,6 +302,28 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
         stats["failed"] = prev.get("failed", []) + stats["failed"]  # 화면에는 앞의 20개만
     record_result(conn, stats)
     return stats
+
+
+MAX_CONTRACTS = 5000
+
+
+def mark_contracts(conn: sqlite3.Connection, file_ids: list) -> int:
+    """드라이브 '계약완료' 폴더에 있는 파일 ID 목록 → 이미 적재된 통화에 계약 완료 표시.
+
+    드라이브는 파일을 옮겨도 생성 시각이 그대로라, 옮긴 녹취는 스크립트가 따로 이 목록으로 알려 준다.
+    목록에서 빠졌다고 표시를 지우지는 않는다(드라이브가 여러 개면 나눠 오고, 백업으로 옮겨도 계약은 그대로).
+    """
+    ids = [i for i in file_ids if isinstance(i, str) and i]
+    n = 0
+    with _lock:
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            cur = conn.execute(
+                "UPDATE calls SET contracted = 1 WHERE contracted = 0 AND drive_file_id IN "
+                f"({','.join('?' * len(chunk))})", chunk)
+            n += max(cur.rowcount, 0)
+        conn.commit()
+    return n
 
 
 def record_result(conn: sqlite3.Connection, stats: dict) -> None:

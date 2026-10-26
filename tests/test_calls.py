@@ -36,6 +36,13 @@ class CallsTest(unittest.TestCase):
         self.assertTrue(all(i["playable"] for i in r["items"]))
         self.assertEqual(r["items"][0]["agent_name"], "이서준")
 
+    def test_contract_only(self):
+        ingest.mark_contracts(self.conn, ["f3"])
+        r = calls.search(self.conn, self.day, contract_only=True)
+        self.assertEqual(self.ids(r), ["f3"])
+        self.assertTrue(r["items"][0]["contracted"])
+        self.assertTrue(calls.detail(self.conn, r["items"][0]["id"])["contracted"])
+
     def test_full_number_search(self):
         for q in ("010-1111-2222", "01011112222", "+82 10 1111 2222"):
             r = calls.search(self.conn, None, q=q)
