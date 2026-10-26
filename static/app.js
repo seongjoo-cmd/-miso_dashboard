@@ -1077,7 +1077,10 @@
     renderIngestStatus(s.last_ingest);
     const drive = s.source === "drive";
     $("#drive-card").hidden = !drive || state.user.role !== "admin";
-    try { if (!$("#drive-folder").value) $("#drive-folder").value = localStorage.getItem("cti.driveFolder") || ""; } catch { /* 무시 */ }
+    try {
+      if (!$("#drive-folder").value) $("#drive-folder").value = localStorage.getItem("cti.driveFolder") || "";
+      if (!$("#drive-folder-2").value) $("#drive-folder-2").value = localStorage.getItem("cti.driveFolder2") || "";
+    } catch { /* 무시 */ }
     $("#webapp-url").value = s.drive_webapp_url || "";
     state.webapp = !!s.drive_webapp_url; state.webappUrl = s.drive_webapp_url; state.source = s.source; updateSyncButton();
     $("#backup-card").hidden = !drive || state.user.role !== "admin";
@@ -1239,13 +1242,13 @@
 
   $("#drive-copy").addEventListener("click", async () => {
     const msg = $("#drive-msg");
-    const raw = $("#drive-folder").value.trim();
-    // 주소 여러 개(드라이브 여러 개)는 쉼표·띄어쓰기로 이어서
-    const ids = raw.split(/[\s,]+/).map((s) => (/folders\/([A-Za-z0-9_-]{10,})/.exec(s) || /^([A-Za-z0-9_-]{10,})$/.exec(s))?.[1]).filter(Boolean);
+    const raw = $("#drive-folder").value.trim(), raw2 = $("#drive-folder-2").value.trim();
+    // 한 칸에 여러 주소를 띄어 쓰거나 쉼표로 이어 넣어도 됨
+    const ids = `${raw} ${raw2}`.split(/[\s,]+/).map((s) => (/folders\/([A-Za-z0-9_-]{10,})/.exec(s) || /^([A-Za-z0-9_-]{10,})$/.exec(s))?.[1]).filter(Boolean);
     if (!ids.length) {
       msg.className = "form-msg err"; msg.textContent = "녹취 폴더 주소를 먼저 붙여넣어 주세요."; $("#drive-folder").focus(); return;
     }
-    try { localStorage.setItem("cti.driveFolder", raw); } catch { /* 무시 */ }
+    try { localStorage.setItem("cti.driveFolder", raw); localStorage.setItem("cti.driveFolder2", raw2); } catch { /* 무시 */ }
     try {
       const { script } = await api("/api/drive/script");
       await navigator.clipboard.writeText(script.replace("['여기에_녹취_폴더_ID']", JSON.stringify([...new Set(ids)]).replaceAll('"', "'")));

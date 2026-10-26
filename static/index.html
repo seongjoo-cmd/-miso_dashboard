@@ -247,8 +247,13 @@
         <div class="conn-box" id="drive-status" hidden></div>
         <div class="field">
           <label for="drive-folder">녹취 폴더 주소</label>
-          <input id="drive-folder" class="text-input" type="text" inputmode="url" autocomplete="off"
-                 placeholder="https://drive.google.com/drive/folders/… (여러 개면 쉼표로)">
+          <input id="drive-folder" class="text-input" type="url" inputmode="url" autocomplete="off"
+                 placeholder="https://drive.google.com/drive/folders/…">
+        </div>
+        <div class="field">
+          <label for="drive-folder-2">두 번째 드라이브 주소 (있으면)</label>
+          <input id="drive-folder-2" class="text-input" type="url" inputmode="url" autocomplete="off"
+                 placeholder="https://drive.google.com/drive/folders/…">
         </div>
         <ol class="steps">
           <li><b>스크립트 복사</b>를 누르세요.</li>
@@ -424,6 +429,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261026-1"></script>
+  <script src="/static/app.js?v=20261026-2"></script>
 </body>
 </html>
