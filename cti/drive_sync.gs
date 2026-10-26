@@ -31,6 +31,7 @@ function 설치() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
   ScriptApp.newTrigger('동기화').timeBased().everyMinutes(5).create();
   PropertiesService.getScriptProperties().deleteProperty('since');
+  PropertiesService.getScriptProperties().deleteProperty('before');
   roots_().forEach(function (id) { DriveApp.getFolderById(id); }); // 폴더 접근 권한 확인
   동기화();
 }
@@ -38,6 +39,7 @@ function 설치() {
 /** 처음부터 다시 보내기(이미 있는 녹취는 대시보드가 알아서 건너뜀) */
 function 전체다시보내기() {
   PropertiesService.getScriptProperties().deleteProperty('since');
+  PropertiesService.getScriptProperties().deleteProperty('before');
   동기화();
 }
 
@@ -63,8 +65,8 @@ function 동기화(budgetMs) {
       report_({ ok: false, error: String(e).slice(0, 300) });  // 대시보드 설정 화면에 '오류'로 보이게
       throw e;
     }
-    result.added = s.added; result.found = s.found; result.sent = s.sent; result.more = s.sent < s.found;
-    report_({ ok: true, added: result.added, found: result.found, more: result.more });
+    result.added = s.added; result.sent = s.sent; result.more = s.more;
+    report_({ ok: true, added: result.added, found: s.sent, more: result.more });
     return result;
   } finally {
     lock.releaseLock();
@@ -130,42 +132,105 @@ function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
 
+/**
+ * 최신 녹취부터 보낸다.
+ *  1) 지난 회차 이후 새로 올라온 녹취('since' 이후)
+ *  2) 남는 시간에 지난 녹취를 최근 것부터 거꾸로('before' 이전, 다 채우면 'done')
+ */
 function syncNew_(started, budget) {
   const props = PropertiesService.getScriptProperties();
-  const since = props.getProperty('since');
-  const files = [];
-  // 최상위 폴더 바로 아래 폴더 이름 = 에이전트
+  let since = props.getProperty('since');
+  let before = props.getProperty('before');
   const dirs = agentFolders_();
-  dirs.forEach(function (agentDir) {
-    walk_(agentDir.id, agentDir.name, since, files, false);
-  });
-  files.sort(function (a, b) { return a.created < b.created ? -1 : 1; });
+  const tree = folderTree_(dirs);
+  const st = { sent: 0, added: 0, first: true, dirs: dirs };
+  const timeLeft = function () { return Date.now() - started < budget; };
 
-  let sent = 0, added = 0, newest = since, first = true;
-  while (sent < files.length || first) {
-    const chunk = files.slice(sent, sent + BATCH);
-    chunk.forEach(function (f) { if (f.durationMs == null) f.durationMs = mp4DurationMs_(f.id, f.name); });
-    const body = { files: chunk, first: first };
-    if (first) body.folders = dirs.map(function (d) { return d.name; });  // 녹취가 없는 에이전트 폴더도 알림
-    added += post_(body).added || 0;
-    first = false;
-    sent += chunk.length;
-    if (chunk.length) newest = chunk[chunk.length - 1].created;
-    if (!chunk.length || Date.now() - started > budget) break;
+  if (!since || !before) {  // 처음: 지금부터 거꾸로 채우기 시작
+    since = new Date(started - 10 * 60 * 1000).toISOString();
+    before = new Date(started).toISOString();
+    props.setProperties({ since: since, before: before });
+  } else {
+    // 1) 새 녹취(보통 몇 개 안 됨)
+    const files = [];
+    tree.forEach(function (d) { listFiles_(d.id, since).forEach(function (f) { pushFile_(files, f, d); }); });
+    files.sort(function (a, b) { return a.created < b.created ? -1 : 1; });
+    let i = 0;
+    while (i < files.length && timeLeft()) {
+      const chunk = files.slice(i, i + BATCH);
+      send_(chunk, st);
+      i += chunk.length;
+      props.setProperty('since', chunk[chunk.length - 1].created);
+    }
+    if (i >= files.length) props.setProperty('since', new Date(started - 10 * 60 * 1000).toISOString());  // 10분 겹치게(중복은 대시보드가 거름)
+    else st.more = true;
   }
-  // 다음 회차는 이번에 보낸 마지막 파일 이후부터(10분 겹치게 — 중복은 대시보드가 걸러냄)
-  if (sent >= files.length) {
-    props.setProperty('since', new Date(started - 10 * 60 * 1000).toISOString());
-  } else if (newest) {
-    props.setProperty('since', newest);
+
+  // 2) 지난 녹취를 최근 것부터
+  while (before !== 'done' && timeLeft()) {
+    let cand = [];
+    tree.forEach(function (d) { listBefore_(d.id, before).forEach(function (f) { pushFile_(cand, f, d); }); });
+    if (!cand.length) { before = 'done'; break; }
+    cand.sort(function (a, b) { return a.created > b.created ? -1 : 1; });
+    let n = Math.min(BATCH, cand.length);
+    while (n < cand.length && cand[n].created === cand[n - 1].created) n++;  // 같은 시각 파일은 한 묶음으로
+    const chunk = cand.slice(0, n);
+    send_(chunk, st);
+    before = chunk[chunk.length - 1].created;
+    props.setProperty('before', before);
   }
+  props.setProperty('before', before);
+  if (st.first) send_([], st);  // 보낼 게 없어도 폴더 목록·이번 회차 결과는 알림
+  if (before !== 'done') st.more = true;
+
   // 계약완료 폴더로 옮긴 녹취는 생성 시각이 그대로라 위에서 안 잡힘 → 파일 ID 목록을 따로 알림
-  if (Date.now() - started < budget) {
+  if (timeLeft()) {
     const ids = contractIds_(dirs);
     for (let i = 0; i < ids.length; i += 1000) post_({ files: [], first: false, contracts: ids.slice(i, i + 1000) });
   }
-  console.log('보낸 파일 ' + sent + ' / 찾은 파일 ' + files.length + ' (새로 추가 ' + added + ')');
-  return { sent: sent, found: files.length, added: added };
+  console.log('보낸 파일 ' + st.sent + ' (새로 추가 ' + st.added + ')' + (before === 'done' ? ' · 지난 녹취 모두 보냄' : ' · 지난 녹취는 ' + before + ' 이전부터 이어서'));
+  return { sent: st.sent, added: st.added, more: !!st.more };
+}
+
+function send_(chunk, st) {
+  chunk.forEach(function (f) { if (f.durationMs == null) f.durationMs = mp4DurationMs_(f.id, f.name); });
+  const body = { files: chunk, first: st.first };
+  if (st.first) body.folders = st.dirs.map(function (d) { return d.name; });  // 녹취가 없는 에이전트 폴더도 알림
+  st.added += post_(body).added || 0;
+  st.first = false;
+  st.sent += chunk.length;
+}
+
+/** 에이전트 폴더와 그 아래 모든 폴더: {id, agent, contract} */
+function folderTree_(dirs) {
+  const out = [];
+  const visit = function (id, agent, contract) {
+    out.push({ id: id, agent: agent, contract: contract });
+    listChildren_(id, true).forEach(function (sub) { visit(sub.id, agent, contract || sub.name.trim() === CONTRACT_DIR); });
+  };
+  dirs.forEach(function (d) { visit(d.id, d.name, false); });
+  return out;
+}
+
+function pushFile_(out, f, d) {
+  if (!AUDIO.test(f.name)) return;
+  out.push({
+    id: f.id, agent: d.agent, name: f.name, size: Number(f.size || 0), created: f.createdTime,
+    durationMs: f.videoMediaMetadata && f.videoMediaMetadata.durationMillis
+      ? Number(f.videoMediaMetadata.durationMillis) : null,
+    contract: d.contract,
+  });
+}
+
+/** 폴더 하나에서 before 이전에 올라온 파일을 최근 것부터 BATCH 개 */
+function listBefore_(folderId, before) {
+  const q = "'" + folderId + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'" +
+    " and createdTime < '" + before + "'";
+  const url = 'https://www.googleapis.com/drive/v3/files?pageSize=' + BATCH + '&orderBy=createdTime%20desc' +
+    '&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives&q=' + encodeURIComponent(q) +
+    '&fields=' + encodeURIComponent('files(id,name,size,createdTime,videoMediaMetadata(durationMillis))');
+  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
+  return JSON.parse(res.getContentText()).files || [];
 }
 
 function roots_() {
