@@ -508,12 +508,12 @@ def make_handler(cfg: Config):
                         conn, period, _parse_agent(q), q.get("q"),
                         _parse_int(q, "same_as"), _parse_int(q, "min_sec"), q.get("cursor"),
                         hour_from=_parse_int(q, "hour_from"), hour_to=_parse_int(q, "hour_to"),
-                        contract_only=q.get("contract") == "1"))
+                        contract_only=q.get("contract") == "1", full_phone=user["role"] == "admin"))
                 except calls.SearchError as e:
                     raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
             m = re.fullmatch(r"/api/calls/(\d+)", path)
             if m and method == "GET":
-                d = calls.detail(conn, int(m.group(1)))
+                d = calls.detail(conn, int(m.group(1)), full_phone=user["role"] == "admin")
                 if d is None:
                     raise ApiError(HTTPStatus.NOT_FOUND, "녹취를 찾을 수 없어요.")
                 return self._send_json(200, d)
@@ -523,7 +523,7 @@ def make_handler(cfg: Config):
                 agent_id = int(m.group(1))
                 if method == "GET" and not m.group(2):
                     cur, _ = _parse_period(cfg, q)
-                    detail = dashboard.agent_detail(conn, agent_id, cur)
+                    detail = dashboard.agent_detail(conn, agent_id, cur, full_phone=user["role"] == "admin")
                     if detail is None:
                         raise ApiError(HTTPStatus.NOT_FOUND, "에이전트를 찾을 수 없습니다.")
                     if user["role"] == "admin" and SOURCE == "folder":

@@ -72,13 +72,11 @@ class IngestTest(unittest.TestCase):
             ("김민지", "2026-10-12 09:15:00", 125),
             ("이서준", "2026-10-12 10:00:00", 5),
         ])
-        # 같은 번호 → 같은 고객 키, 원문 번호는 어디에도 없음
+        # 같은 번호 → 같은 고객 키. 전체 번호는 customer_phone 에만(관리자용)
         self.assertEqual(rows[0]["customer_key"], rows[2]["customer_key"])
         self.assertNotEqual(rows[0]["customer_key"], rows[1]["customer_key"])
-        self.assertEqual(rows[1]["customer_masked"], "010-****-4444")
-        dump = "\n".join(self.conn.iterdump())
-        for raw in ("01011112222", "010-1111-2222", "01033334444"):
-            self.assertNotIn(raw, dump)
+        self.assertEqual((rows[1]["customer_masked"], rows[1]["customer_phone"]), ("010-****-4444", "010-3333-4444"))
+        self.assertNotIn("01011112222", "\n".join(self.conn.iterdump()))  # 파일 경로는 HMAC 으로만
 
         # 다시 돌려도 중복 적재되지 않는다
         s2 = ingest.ingest_all(self.conn, self.root)

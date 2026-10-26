@@ -10,6 +10,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import timedelta
 
+from .calls import shown_phone
 from .db import get_setting_int
 from .periods import Period
 
@@ -183,7 +184,7 @@ def hourly_distribution(conn, p: Period, agent_id: int | None) -> list[int]:
     return out
 
 
-def agent_detail(conn, agent_id: int, p: Period, recent_limit: int = 20) -> dict | None:
+def agent_detail(conn, agent_id: int, p: Period, recent_limit: int = 20, full_phone: bool = False) -> dict | None:
     agent = conn.execute("SELECT id, name, extension FROM agents WHERE id = ?", (agent_id,)).fetchone()
     if agent is None:
         return None
@@ -201,7 +202,7 @@ def agent_detail(conn, agent_id: int, p: Period, recent_limit: int = 20) -> dict
     by_d = {r["d"]: r for r in rows}
     recent = conn.execute(
         """
-        SELECT id, started_at, customer_masked, duration_sec
+        SELECT id, started_at, customer_masked, customer_phone, duration_sec
         FROM calls WHERE agent_id = ? ORDER BY started_at DESC LIMIT ?
         """,
         (agent_id, recent_limit),
@@ -214,7 +215,8 @@ def agent_detail(conn, agent_id: int, p: Period, recent_limit: int = 20) -> dict
             "att_sec": [round(by_d[d]["att_sec"], 1) if d in by_d and by_d[d]["att_sec"] is not None
                         else None for d in dates],
         },
-        "recent_calls": [dict(r) for r in recent],
+        "recent_calls": [{"id": r["id"], "started_at": r["started_at"], "duration_sec": r["duration_sec"],
+                          "customer_masked": shown_phone(r, full_phone)} for r in recent],
     }
 
 

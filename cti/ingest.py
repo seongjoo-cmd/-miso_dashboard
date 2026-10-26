@@ -5,8 +5,8 @@
 - 파일 이름 = 고객 전화번호 + 통화 시작 일시
 - 통화시간 = 오디오 헤더의 재생 길이(없으면 파일 크기로 추정)
 
-개인정보: 전화번호 원문은 DB에 저장하지 않는다. 중복 제외 집계용 HMAC 키와
-'010-****-5678' 형태의 표시용 마스킹 값만 저장한다.
+개인정보: 중복 제외 집계·검색용 HMAC 키, 표시용 마스킹 값 '010-****-5678',
+관리자 화면용 전체 번호 '010-1234-5678'을 저장한다. 관리자가 아니면 API 가 마스킹 값만 준다.
 """
 from __future__ import annotations
 
@@ -52,6 +52,7 @@ class Parsed:
     started_at: datetime
     phone: str | None  # 숫자만, 국내 형식(0으로 시작)
     masked: str | None  # 표시용 '010-****-5678'
+    full: str | None = None  # 관리자용 '010-1234-5678'
 
 
 def parse_filename(name: str) -> Parsed | None:
@@ -76,12 +77,12 @@ def parse_filename(name: str) -> Parsed | None:
     if not m:
         r = _REP_PHONE.search(stem)
         if r:
-            return Parsed(started, r.group(1) + r.group(2), f"{r.group(1)}-****")
+            return Parsed(started, r.group(1) + r.group(2), f"{r.group(1)}-****", f"{r.group(1)}-{r.group(2)}")
         return Parsed(started, None, None)
     area, mid, last = m.groups()
     if not area.startswith("0"):  # +82 10 ... → 010
         area = "0" + area
-    return Parsed(started, area + mid + last, f"{area}-****-{last}")
+    return Parsed(started, area + mid + last, f"{area}-****-{last}", f"{area}-{mid}-{last}")
 
 
 def hash_key(conn: sqlite3.Connection) -> bytes:
@@ -107,12 +108,12 @@ def _insert_call(conn, hk: bytes, agent_id: int, p: Parsed, sec: float, how: str
                  uploaded_at: str | None = None, contracted: bool = False) -> None:
     conn.execute(
         """
-        INSERT OR IGNORE INTO calls(agent_id, customer_key, customer_masked, started_at,
+        INSERT OR IGNORE INTO calls(agent_id, customer_key, customer_masked, customer_phone, started_at,
                                     duration_sec, duration_source, source_key, file_bytes, drive_file_id,
                                     uploaded_at, contracted)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (agent_id, customer_key(hk, p.phone) if p.phone else None, p.masked,
+        (agent_id, customer_key(hk, p.phone) if p.phone else None, p.masked, p.full,
          p.started_at.isoformat(sep=" "), round(sec), how, src_key, size, drive_file_id, uploaded_at,
          int(contracted)),
     )
@@ -274,6 +275,10 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 stats["already"] += 1
                 if r.get("contract"):
                     conn.execute("UPDATE calls SET contracted = 1 WHERE source_key = ?", (key,))
+                p = parse_filename(name)
+                if p and p.full:  # 전체 번호 저장 전에 들어온 녹취: 다시 받을 때 채운다
+                    conn.execute("UPDATE calls SET customer_phone = ? WHERE source_key = ? AND customer_phone IS NULL",
+                                 (p.full, key))
                 if uploaded:  # 이 기능 전에 들어온 녹취: 다시 받을 때 올라온 시각을 채운다
                     conn.execute("UPDATE calls SET uploaded_at = ? WHERE source_key = ? AND uploaded_at IS NULL",
                                  (uploaded, key))

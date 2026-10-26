@@ -36,6 +36,17 @@ class CallsTest(unittest.TestCase):
         self.assertTrue(all(i["playable"] for i in r["items"]))
         self.assertEqual(r["items"][0]["agent_name"], "이서준")
 
+    def test_full_phone_only_when_asked(self):
+        r = calls.search(self.conn, self.day)
+        self.assertEqual(r["items"][-1]["customer_masked"], "010-****-2222")
+        r = calls.search(self.conn, self.day, full_phone=True)
+        self.assertEqual([i["customer_masked"] for i in r["items"]], [None, "1600-4112", "010-3333-2222", "010-1111-2222"])
+        self.assertEqual(calls.detail(self.conn, r["items"][-1]["id"], full_phone=True)["customer_masked"], "010-1111-2222")
+        # 전체 번호 저장 전에 들어온 녹취는 다시 받을 때 채운다
+        self.conn.execute("UPDATE calls SET customer_phone = NULL")
+        ingest.ingest_records(self.conn, [rec("f1", "김민지", "통화 녹음 010-1111-2222_261012_090000.mp4")])
+        self.assertEqual(calls.search(self.conn, self.day, full_phone=True)["items"][-1]["customer_masked"], "010-1111-2222")
+
     def test_contract_only(self):
         ingest.mark_contracts(self.conn, ["f3"])
         r = calls.search(self.conn, self.day, contract_only=True)

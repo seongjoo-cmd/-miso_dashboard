@@ -29,6 +29,6 @@
 - 시각은 모두 한국 시간 naive 문자열(`'YYYY-MM-DD HH:MM:SS'`). `cti/__init__.py` 가 Linux 에서만 `TZ=Asia/Seoul` 을 건다 — Windows 에서 `TZ` 를 넣으면 C 런타임이 UTC 로 바꿔 버린다.
 - 드라이브 `createdTime` 은 UTC → `ingest.local_time()` 으로 변환해 `calls.uploaded_at` 에 저장. 업로드 현황은 `cti/uploads.py`.
 - 슬랙 알림(`cti/slack.py`): 봇 토큰은 환경 변수 `SLACK_BOT_TOKEN` 우선, 없으면 설정 화면에서 DB 에 저장. 토큰은 API 응답·저장소에 절대 넣지 않는다. 받는 곳은 이메일(DM)·U…·C…·#채널.
-- 고객 전화번호 원문은 저장하지 않는다(HMAC + 마스킹). 로그·화면에도 가운데를 가린다.
+- 고객 전화번호: 전체 번호(`customer_phone`)는 **관리자에게만** 보인다(2026-10-26 결정). 뷰어·로그·실패 목록은 가운데를 가린다(`customer_masked`). 집계·검색은 HMAC(`customer_key`).
 - Windows 의 curl 은 한글 본문을 CP949 로 보낸다 — 한글 JSON 으로 API 를 시험할 때는 Python 으로 보낼 것.
 - 로컬 서버는 index.html 에 캐시 헤더가 없어 브라우저가 예전 화면을 보여 줄 수 있다(`/?r=1` 로 새로 받기).

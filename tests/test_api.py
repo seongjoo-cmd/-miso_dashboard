@@ -107,7 +107,9 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(status, 200, r)
         self.assertEqual(r["backup"]["ingested"], 1)
         _, d, _ = self.req("GET", "/api/agents/1?preset=today", token=t)
-        self.assertIn("010-****-5678", [c["customer_masked"] for c in d["recent_calls"]])
+        self.assertIn("010-1234-5678", [c["customer_masked"] for c in d["recent_calls"]])  # 관리자는 전체 번호
+        _, d, _ = self.req("GET", "/api/agents/1?preset=today", token=self.login("viewer", "pw-viewer"))
+        self.assertIn("010-****-5678", [c["customer_masked"] for c in d["recent_calls"]])  # 뷰어는 가린 번호
         self.assertEqual(r["sync_folder"]["file_count"], 0)
         self.assertEqual(len(r["backups"]), 1)
         # 다시 실행하면 빈 폴더라 409

@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS calls (
     agent_id         INTEGER NOT NULL REFERENCES agents(id),
     customer_key     TEXT,      -- 전화번호 HMAC(중복 제외 집계용, 복원 불가)
     customer_masked  TEXT,      -- 표시용 '010-****-5678'
+    customer_phone   TEXT,      -- 전체 번호 '010-1234-5678'(관리자 화면에만 보임)
     started_at       TEXT NOT NULL,  -- 로컬 시각 'YYYY-MM-DD HH:MM:SS'
     duration_sec     INTEGER NOT NULL DEFAULT 0,
     duration_source  TEXT,      -- 'header' | 'size'
@@ -181,7 +182,8 @@ def connect(target):
 
 # 이미 만들어진 DB에 나중에 추가된 열: (테이블, 열, 타입)
 _ADDED_COLUMNS = [("calls", "drive_file_id", "TEXT"), ("calls", "archived_at", "TEXT"),
-                  ("calls", "uploaded_at", "TEXT"), ("calls", "contracted", "INTEGER NOT NULL DEFAULT 0")]
+                  ("calls", "uploaded_at", "TEXT"), ("calls", "contracted", "INTEGER NOT NULL DEFAULT 0"),
+                  ("calls", "customer_phone", "TEXT")]
 
 
 def _migrate(conn) -> None:

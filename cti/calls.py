@@ -30,10 +30,15 @@ def _phone_digits(q: str) -> str:
     return d
 
 
+def shown_phone(r, full_phone: bool) -> str | None:
+    """관리자(full_phone)에게는 전체 번호, 그 외에는 가운데를 가린 번호."""
+    return (full_phone and r["customer_phone"]) or r["customer_masked"]
+
+
 def search(conn, period: Period | None, agent_id: int | None = None, q: str | None = None,
            same_as: int | None = None, min_sec: int | None = None, cursor: str | None = None,
            limit: int = PAGE, hour_from: int | None = None, hour_to: int | None = None,
-           contract_only: bool = False) -> dict:
+           contract_only: bool = False, full_phone: bool = False) -> dict:
     """hour_from 이상 hour_to 미만 시각(0~24시)에 시작한 통화."""
     where, args = [], []
     by_customer = False
@@ -92,7 +97,7 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
 
     rows = conn.execute(
         f"""
-        SELECT c.id, c.started_at, c.agent_id, a.name AS agent_name, c.customer_masked,
+        SELECT c.id, c.started_at, c.agent_id, a.name AS agent_name, c.customer_masked, c.customer_phone,
                c.duration_sec, c.drive_file_id, c.contracted
         FROM calls c JOIN agents a ON a.id = c.agent_id
         WHERE {page_where}
@@ -105,7 +110,7 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
     rows = rows[:limit]
     items = [{
         "id": r["id"], "started_at": r["started_at"], "agent_id": r["agent_id"], "agent_name": r["agent_name"],
-        "customer_masked": r["customer_masked"], "duration_sec": r["duration_sec"],
+        "customer_masked": shown_phone(r, full_phone), "duration_sec": r["duration_sec"],
         "playable": bool(r["drive_file_id"]), "contracted": bool(r["contracted"]),
     } for r in rows]
     return {
@@ -116,11 +121,11 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
     }
 
 
-def detail(conn, call_id: int) -> dict | None:
+def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
     r = conn.execute(
         """
         SELECT c.id, c.started_at, c.agent_id, a.name AS agent_name, a.extension, c.customer_masked,
-               c.customer_key, c.duration_sec, c.duration_source, c.drive_file_id, c.contracted
+               c.customer_phone, c.customer_key, c.duration_sec, c.duration_source, c.drive_file_id, c.contracted
         FROM calls c JOIN agents a ON a.id = c.agent_id WHERE c.id = ?
         """,
         (call_id,),
@@ -141,7 +146,7 @@ def detail(conn, call_id: int) -> dict | None:
         play = None
     return {
         "id": r["id"], "started_at": r["started_at"], "agent_id": r["agent_id"], "agent_name": r["agent_name"],
-        "extension": r["extension"], "customer_masked": r["customer_masked"], "duration_sec": r["duration_sec"],
+        "extension": r["extension"], "customer_masked": shown_phone(r, full_phone), "duration_sec": r["duration_sec"],
         "duration_estimated": r["duration_source"] == "size", "same_customer_calls": same, "play": play,
         "contracted": bool(r["contracted"]),
     }
