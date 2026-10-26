@@ -237,10 +237,29 @@ function scopes_(dirs) {
 }
 
 function isSharedDrive_(id) {
-  const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/drives/' + id + '?fields=id', {
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
-  });
-  return res.getResponseCode() === 200;
+  const code = driveFetch_('https://www.googleapis.com/drive/v3/drives/' + id + '?fields=id').getResponseCode();
+  if (code >= 500 || code === 429) throw new Error('드라이브가 잠시 응답하지 않아요 (' + code + '). 다음 회차에 이어서 해요.');
+  return code === 200;  // 404 등: 공유 드라이브가 아닌 일반 폴더
+}
+
+/** 드라이브 API 요청. 구글 쪽 일시 오류(5xx·429)는 잠깐 쉬었다가 최대 4번까지 다시 */
+function driveFetch_(url) {
+  let res;
+  for (let i = 0; i < 4; i++) {
+    res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    const code = res.getResponseCode();
+    if (code < 500 && code !== 429) return res;
+    if (i < 3) Utilities.sleep(2000 * Math.pow(2, i));  // 2·4·8초
+  }
+  return res;
+}
+
+function driveJson_(url) {
+  const res = driveFetch_(url);
+  if (res.getResponseCode() >= 300) {
+    throw new Error('드라이브 요청 실패 (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 200));
+  }
+  return JSON.parse(res.getContentText());
 }
 
 /** 공유 드라이브의 모든 폴더를 한 번에 받아, 에이전트 폴더 아래 폴더마다 에이전트·계약완료 여부를 붙임 */
@@ -292,8 +311,7 @@ function drivePage_(q, driveId) {
   const url = 'https://www.googleapis.com/drive/v3/files?pageSize=' + BATCH + '&orderBy=createdTime%20desc' +
     '&supportsAllDrives=true&includeItemsFromAllDrives=true' + corpora_(driveId) + '&q=' + encodeURIComponent(q) +
     '&fields=' + encodeURIComponent('files(' + FILE_FIELDS + ')');
-  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
-  return JSON.parse(res.getContentText()).files || [];
+  return driveJson_(url).files || [];
 }
 
 function corpora_(driveId) {
@@ -457,8 +475,7 @@ function driveList_(q, fields, driveId) {
     const url = 'https://www.googleapis.com/drive/v3/files?pageSize=1000&supportsAllDrives=true' +
       '&includeItemsFromAllDrives=true' + corpora_(driveId) + '&q=' + encodeURIComponent(q) +
       '&fields=' + encodeURIComponent('nextPageToken,' + fields) + (pageToken ? '&pageToken=' + pageToken : '');
-    const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
-    const body = JSON.parse(res.getContentText());
+    const body = driveJson_(url);
     (body.files || []).forEach(function (f) { out.push(f); });
     pageToken = body.nextPageToken || '';
   } while (pageToken);
