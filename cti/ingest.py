@@ -332,6 +332,15 @@ def mark_contracts(conn: sqlite3.Connection, file_ids: list) -> int:
     return n
 
 
+def known_drive_files(conn, file_ids: list) -> list[str]:
+    """이미 적재된 드라이브 파일 ID — 스크립트가 이 녹취들은 길이를 다시 읽지 않게."""
+    ids = [i for i in file_ids if isinstance(i, str) and i]
+    if not ids:
+        return []
+    return [r[0] for r in conn.execute(
+        f"SELECT drive_file_id FROM calls WHERE drive_file_id IN ({','.join('?' * len(ids))})", ids)]
+
+
 def drop_drive_files(conn: sqlite3.Connection, file_ids: list) -> int:
     """드라이브 바로가기처럼 통화가 아닌데 예전에 통화로 들어간 파일 → 그 통화 기록을 지운다(원래 녹취는 그대로)."""
     ids = [i for i in file_ids if isinstance(i, str) and i]

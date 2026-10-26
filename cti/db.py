@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS calls (
 CREATE INDEX IF NOT EXISTS idx_calls_started ON calls(started_at);
 CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls(agent_id, started_at);
 CREATE INDEX IF NOT EXISTS idx_calls_customer ON calls(customer_key);
+CREATE INDEX IF NOT EXISTS idx_calls_drive ON calls(drive_file_id);
 
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,

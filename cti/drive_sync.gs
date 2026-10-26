@@ -24,6 +24,8 @@ const CONTRACT_DIR = '계약완료';  // 에이전트 폴더 안 이 폴더의 �
 
 const AUDIO = /\.(m4a|mp4|3gp|3ga|aac|mp3|wav|amr|ogg|opus|wma)$/i;
 const BATCH = 200;              // 한 번에 보내는 파일 수
+// 구글 외부 요청(UrlFetch) 하루 한도(회사 계정 약 10만 번) 중 지난 녹취 채우기에 쓰는 몫 — 나머지는 새 녹취용
+const BACKFILL_DAILY_FETCHES = 70000;
 const TIME_BUDGET_MS = 270000;  // 실행 시간 제한(6분) 전에 끊고 다음 회차에 이어서
 const BACKUP_DIR = '_백업';      // 이름이 '_'로 시작하는 폴더는 에이전트 폴더로 보지 않음
 
@@ -69,8 +71,26 @@ function 동기화(budgetMs) {
     report_({ ok: true, added: result.added, found: s.sent, more: result.more });
     return result;
   } finally {
+    saveFetches_();
     lock.releaseLock();
   }
+}
+
+let FETCHES = 0;  // 이번 실행에서 쓴 외부 요청 수
+function fetch_(url, opt) {
+  FETCHES++;
+  return UrlFetchApp.fetch(url, opt);
+}
+function today_() { return Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd'); }
+/** 오늘(한국 날짜) 앞선 실행들이 쓴 외부 요청 수 */
+function fetchesToday_() {
+  const p = PropertiesService.getScriptProperties();
+  return p.getProperty('fetchDay') === today_() ? Number(p.getProperty('fetchCount') || 0) : 0;
+}
+function saveFetches_() {
+  const n = fetchesToday_() + FETCHES;
+  PropertiesService.getScriptProperties().setProperties({ fetchDay: today_(), fetchCount: String(n) });
+  FETCHES = 0;
 }
 
 /**
@@ -176,7 +196,9 @@ function syncNew_(started, budget) {
   }
 
   // 2) 지난 녹취를 최근 것부터
-  while (before !== 'done' && timeLeft()) {
+  const usedBefore = fetchesToday_();
+  const backfillLeft = function () { return usedBefore + FETCHES < BACKFILL_DAILY_FETCHES; };
+  while (before !== 'done' && timeLeft() && backfillLeft()) {
     // 드라이브마다 before 이전 최근 파일 BATCH 개(_백업 등 에이전트 폴더 밖 파일 포함) → 합쳐서 최근 BATCH 개
     const raw = [];
     let full = false;  // 어느 쪽이든 BATCH 개를 꽉 채워 왔으면 그 뒤에 같은 시각 파일이 더 있을 수 있음
@@ -203,12 +225,20 @@ function syncNew_(started, budget) {
   if (st.first) send_([], st);  // 보낼 게 없어도 폴더 목록·이번 회차 결과는 알림
   if (before !== 'done') st.more = true;
 
+  if (before !== 'done' && !backfillLeft()) console.log('오늘 지난 녹취 채우기 몫을 다 써서 내일 이어서 해요(새 녹취는 계속 가져와요)');
   console.log('보낸 파일 ' + st.sent + ' (새로 추가 ' + st.added + ')' + (before === 'done' ? ' · 지난 녹취 모두 보냄' : ' · 지난 녹취는 ' + before + ' 이전부터 이어서'));
   return { sent: st.sent, added: st.added, more: !!st.more };
 }
 
 function send_(chunk, st) {
-  chunk.forEach(function (f) { if (f.durationMs == null) f.durationMs = mp4DurationMs_(f.id, f.name); });
+  // 길이는 대시보드에 아직 없는 녹취만 읽음(파일을 내려받아서 요청을 많이 씀)
+  const need = chunk.filter(function (f) { return f.durationMs == null; });
+  if (need.length) {
+    const known = {};
+    JSON.parse(call_('post', '/api/drive/known', { ids: need.map(function (f) { return f.id; }) }).getContentText())
+      .known.forEach(function (id) { known[id] = true; });
+    need.forEach(function (f) { if (!known[f.id]) f.durationMs = mp4DurationMs_(f.id, f.name); });
+  }
   const body = { files: chunk, first: st.first };
   if (st.first) body.folders = st.dirs.map(function (d) { return d.name; });  // 녹취가 없는 에이전트 폴더도 알림
   st.added += post_(body).added || 0;
@@ -246,7 +276,7 @@ function isSharedDrive_(id) {
 function driveFetch_(url) {
   let res;
   for (let i = 0; i < 4; i++) {
-    res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    res = fetch_(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
     const code = res.getResponseCode();
     if (code < 500 && code !== 429) return res;
     if (i < 3) Utilities.sleep(2000 * Math.pow(2, i));  // 2·4·8초
@@ -434,7 +464,7 @@ function ensureFolder_(parent, name) {
 function call_(method, path, body) {
   const opt = { method: method, headers: { 'X-CTI-Token': CTI_TOKEN }, muteHttpExceptions: true };
   if (body) { opt.contentType = 'application/json'; opt.payload = JSON.stringify(body); }
-  const res = UrlFetchApp.fetch(CTI_URL.replace(/\/$/, '') + path, opt);
+  const res = fetch_(CTI_URL.replace(/\/$/, '') + path, opt);
   if (res.getResponseCode() !== 200) {
     throw new Error('대시보드 요청 실패 (' + res.getResponseCode() + '): ' + res.getContentText());
   }
@@ -488,7 +518,7 @@ function mp4DurationMs_(id, name) {
   const ranges = ['bytes=0-262143', 'bytes=-262144'];
   for (let i = 0; i < ranges.length; i++) {
     try {
-      const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + id + '?alt=media&supportsAllDrives=true', {
+      const res = fetch_('https://www.googleapis.com/drive/v3/files/' + id + '?alt=media&supportsAllDrives=true', {
         headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken(), Range: ranges[i] },
         muteHttpExceptions: true,
       });

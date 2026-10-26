@@ -372,6 +372,12 @@ def make_handler(cfg: Config):
 
             if method == "POST" and path == "/api/drive/push":
                 return self._drive_push(conn)
+            if method == "POST" and path == "/api/drive/known":
+                self._check_drive_token(conn)
+                ids = self._read_json().get("ids")
+                if not isinstance(ids, list) or len(ids) > ingest.MAX_RECORDS:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, f"ids 는 {ingest.MAX_RECORDS}개 이하 목록이어야 해요.")
+                return self._send_json(200, {"known": ingest.known_drive_files(conn, ids)})
             if method == "POST" and path == "/api/drive/run":
                 self._check_drive_token(conn)
                 return self._send_json(200, uploads.record_run(conn, self._read_json()))
