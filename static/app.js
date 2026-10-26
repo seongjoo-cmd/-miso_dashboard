@@ -296,6 +296,15 @@
     }
   }
   window.addEventListener("hashchange", route);
+  // 드라이브 동기화가 계속 들어오니 1분마다 보이는 화면을 새로 고침.
+  // '더 보기'로 펼친 목록·열린 에이전트 시트는 건드리지 않음(보던 걸 잃지 않게)
+  setInterval(() => {
+    if (!state.user || document.visibilityState !== "visible") return;
+    const view = location.hash.slice(1) || "calls";
+    if (view === "calls" && callsLoaded && cs.items.length <= 50 && !cs.sameAs) { dashboardStale = true; loadCalls(); }
+    else if (view === "stats" && !$("#sheet").classList.contains("open")) load();
+    else dashboardStale = true;
+  }, 60000);
 
   // ---------- 필터 ----------
   const todayIso = () => {
