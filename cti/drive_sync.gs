@@ -142,7 +142,9 @@ function syncNew_(started, budget) {
   let since = props.getProperty('since');
   let before = props.getProperty('before');
   const dirs = agentFolders_();
-  const tree = folderTree_(dirs);
+  // 폴더를 못 찾으면 '다 보냈음'으로 기록하지 않고 멈춤(대시보드 설정 화면에 오류로 보임)
+  if (!dirs.length) throw new Error('녹취 폴더에서 에이전트 폴더를 찾지 못했어요. 스크립트의 FOLDER_IDS 와, 이 구글 계정이 드라이브 멤버인지 확인해 주세요.');
+  const scopes = scopes_(dirs);
   const st = { sent: 0, added: 0, first: true, dirs: dirs };
   const timeLeft = function () { return Date.now() - started < budget; };
 
@@ -153,7 +155,7 @@ function syncNew_(started, budget) {
   } else {
     // 1) 새 녹취(보통 몇 개 안 됨)
     const files = [];
-    tree.forEach(function (d) { listFiles_(d.id, since).forEach(function (f) { pushFile_(files, f, d); }); });
+    scopes.forEach(function (s) { newFiles_(s, since).forEach(function (x) { if (x.d) pushFile_(files, x.f, x.d); }); });
     files.sort(function (a, b) { return a.created < b.created ? -1 : 1; });
     let i = 0;
     while (i < files.length && timeLeft()) {
@@ -168,15 +170,17 @@ function syncNew_(started, budget) {
 
   // 2) 지난 녹취를 최근 것부터
   while (before !== 'done' && timeLeft()) {
-    let cand = [];
-    tree.forEach(function (d) { listBefore_(d.id, before).forEach(function (f) { pushFile_(cand, f, d); }); });
-    if (!cand.length) { before = 'done'; break; }
-    cand.sort(function (a, b) { return a.created > b.created ? -1 : 1; });
-    let n = Math.min(BATCH, cand.length);
-    while (n < cand.length && cand[n].created === cand[n - 1].created) n++;  // 같은 시각 파일은 한 묶음으로
-    const chunk = cand.slice(0, n);
-    send_(chunk, st);
-    before = chunk[chunk.length - 1].created;
+    // 드라이브마다 before 이전 최근 파일 BATCH 개(_백업 등 에이전트 폴더 밖 파일 포함) → 합쳐서 최근 BATCH 개
+    const raw = [];
+    scopes.forEach(function (s) { olderFiles_(s, before).forEach(function (x) { raw.push(x); }); });
+    if (!raw.length) { before = 'done'; break; }
+    raw.sort(function (a, b) { return a.f.createdTime > b.f.createdTime ? -1 : 1; });
+    let n = Math.min(BATCH, raw.length);
+    while (n < raw.length && raw[n].f.createdTime === raw[n - 1].f.createdTime) n++;  // 같은 시각 파일은 한 묶음으로
+    const chunk = [];
+    raw.slice(0, n).forEach(function (x) { if (x.d) pushFile_(chunk, x.f, x.d); });
+    if (chunk.length) send_(chunk, st);
+    before = raw[n - 1].f.createdTime;
     props.setProperty('before', before);
   }
   props.setProperty('before', before);
@@ -185,7 +189,7 @@ function syncNew_(started, budget) {
 
   // 계약완료 폴더로 옮긴 녹취는 생성 시각이 그대로라 위에서 안 잡힘 → 파일 ID 목록을 따로 알림
   if (timeLeft()) {
-    const ids = contractIds_(dirs);
+    const ids = contractIds_(scopes);
     for (let i = 0; i < ids.length; i += 1000) post_({ files: [], first: false, contracts: ids.slice(i, i + 1000) });
   }
   console.log('보낸 파일 ' + st.sent + ' (새로 추가 ' + st.added + ')' + (before === 'done' ? ' · 지난 녹취 모두 보냄' : ' · 지난 녹취는 ' + before + ' 이전부터 이어서'));
@@ -199,6 +203,90 @@ function send_(chunk, st) {
   st.added += post_(body).added || 0;
   st.first = false;
   st.sent += chunk.length;
+}
+
+const FILE_FIELDS = 'id,name,size,createdTime,parents,videoMediaMetadata(durationMillis)';
+const NOT_FOLDER = "trashed = false and mimeType != 'application/vnd.google-apps.folder'";
+
+/**
+ * 녹취 폴더마다 {drive: 공유 드라이브 ID 또는 null, folders: {폴더 ID: {id, agent, contract}}}.
+ * 공유 드라이브 맨 위 폴더면 드라이브 전체를 한 번에 검색(폴더 수천 개를 하나씩 열지 않게),
+ * 일반 폴더면 하위 폴더를 하나씩 연다.
+ */
+function scopes_(dirs) {
+  return roots_().map(function (root) {
+    const mine = dirs.filter(function (d) { return d.root === root; });
+    const folders = {};
+    if (isSharedDrive_(root)) {
+      return { drive: root, folders: driveFolderMap_(root, mine) };
+    }
+    folderTree_(mine).forEach(function (d) { folders[d.id] = d; });
+    return { drive: null, folders: folders };
+  });
+}
+
+function isSharedDrive_(id) {
+  const res = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/drives/' + id + '?fields=id', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
+  });
+  return res.getResponseCode() === 200;
+}
+
+/** 공유 드라이브의 모든 폴더를 한 번에 받아, 에이전트 폴더 아래 폴더마다 에이전트·계약완료 여부를 붙임 */
+function driveFolderMap_(driveId, agentDirs) {
+  const byId = {};
+  driveList_("trashed = false and mimeType = 'application/vnd.google-apps.folder'", 'files(id,name,parents)', driveId)
+    .forEach(function (f) { byId[f.id] = f; });
+  const out = {};
+  agentDirs.forEach(function (d) { out[d.id] = { id: d.id, agent: d.name, contract: false }; });
+  const resolve = function (id) {
+    if (out[id] !== undefined) return out[id];
+    const f = byId[id];
+    const up = f && f.parents ? resolve(f.parents[0]) : null;  // 드라이브 맨 위·'_' 폴더 쪽이면 null
+    out[id] = up ? { id: id, agent: up.agent, contract: up.contract || f.name.trim() === CONTRACT_DIR } : null;
+    return out[id];
+  };
+  Object.keys(byId).forEach(resolve);
+  Object.keys(out).forEach(function (k) { if (!out[k]) delete out[k]; });
+  return out;
+}
+
+/** since 이후 올라온 파일: [{f, d}] (d 가 null 이면 에이전트 폴더 밖) */
+function newFiles_(s, since) {
+  if (s.drive) {
+    return driveList_(NOT_FOLDER + " and createdTime > '" + since + "'", 'files(' + FILE_FIELDS + ')', s.drive)
+      .map(function (f) { return { f: f, d: s.folders[(f.parents || [])[0]] || null }; });
+  }
+  const out = [];
+  Object.keys(s.folders).forEach(function (id) {
+    listFiles_(id, since).forEach(function (f) { out.push({ f: f, d: s.folders[id] }); });
+  });
+  return out;
+}
+
+/** before 이전에 올라온 파일을 최근 것부터: 공유 드라이브는 BATCH 개, 일반 폴더는 폴더마다 BATCH 개 */
+function olderFiles_(s, before) {
+  const q = NOT_FOLDER + " and createdTime < '" + before + "'";
+  if (s.drive) {
+    return drivePage_(q, s.drive).map(function (f) { return { f: f, d: s.folders[(f.parents || [])[0]] || null }; });
+  }
+  const out = [];
+  Object.keys(s.folders).forEach(function (id) {
+    drivePage_("'" + id + "' in parents and " + q, null).forEach(function (f) { out.push({ f: f, d: s.folders[id] }); });
+  });
+  return out;
+}
+
+function drivePage_(q, driveId) {
+  const url = 'https://www.googleapis.com/drive/v3/files?pageSize=' + BATCH + '&orderBy=createdTime%20desc' +
+    '&supportsAllDrives=true&includeItemsFromAllDrives=true' + corpora_(driveId) + '&q=' + encodeURIComponent(q) +
+    '&fields=' + encodeURIComponent('files(' + FILE_FIELDS + ')');
+  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
+  return JSON.parse(res.getContentText()).files || [];
+}
+
+function corpora_(driveId) {
+  return driveId ? '&corpora=drive&driveId=' + driveId : '&corpora=allDrives';
 }
 
 /** 에이전트 폴더와 그 아래 모든 폴더: {id, agent, contract} */
@@ -222,17 +310,6 @@ function pushFile_(out, f, d) {
   });
 }
 
-/** 폴더 하나에서 before 이전에 올라온 파일을 최근 것부터 BATCH 개 */
-function listBefore_(folderId, before) {
-  const q = "'" + folderId + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder'" +
-    " and createdTime < '" + before + "'";
-  const url = 'https://www.googleapis.com/drive/v3/files?pageSize=' + BATCH + '&orderBy=createdTime%20desc' +
-    '&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives&q=' + encodeURIComponent(q) +
-    '&fields=' + encodeURIComponent('files(id,name,size,createdTime,videoMediaMetadata(durationMillis))');
-  const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
-  return JSON.parse(res.getContentText()).files || [];
-}
-
 function roots_() {
   return FOLDER_IDS.map(function (id) { return String(id).trim(); }).filter(String);
 }
@@ -248,14 +325,12 @@ function agentFolders_() {
   return out;
 }
 
-function contractIds_(dirs) {
+function contractIds_(scopes) {
   const ids = [];
-  dirs.forEach(function (d) {
-    listChildren_(d.id, true).forEach(function (sub) {
-      if (sub.name.trim() !== CONTRACT_DIR) return;
-      const files = [];
-      walk_(sub.id, d.name, null, files, true);
-      files.forEach(function (f) { ids.push(f.id); });
+  scopes.forEach(function (s) {
+    Object.keys(s.folders).forEach(function (id) {
+      if (!s.folders[id].contract) return;
+      listFiles_(id, null).forEach(function (f) { if (AUDIO.test(f.name)) ids.push(f.id); });
     });
   });
   return ids;
@@ -359,12 +434,12 @@ function listFiles_(folderId, since) {
   return driveList_(q, 'files(id,name,size,createdTime,videoMediaMetadata(durationMillis))');
 }
 
-function driveList_(q, fields) {
+function driveList_(q, fields, driveId) {
   const out = [];
   let pageToken = '';
   do {
     const url = 'https://www.googleapis.com/drive/v3/files?pageSize=1000&supportsAllDrives=true' +
-      '&includeItemsFromAllDrives=true&corpora=allDrives&q=' + encodeURIComponent(q) +
+      '&includeItemsFromAllDrives=true' + corpora_(driveId) + '&q=' + encodeURIComponent(q) +
       '&fields=' + encodeURIComponent('nextPageToken,' + fields) + (pageToken ? '&pageToken=' + pageToken : '');
     const res = UrlFetchApp.fetch(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() } });
     const body = JSON.parse(res.getContentText());
