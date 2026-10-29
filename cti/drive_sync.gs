@@ -6,7 +6,7 @@
  *  2. 아래 FOLDER_IDS 에 녹취 폴더 주소의 마지막 부분을 넣기(드라이브가 여러 개면 ['ID1', 'ID2'])
  *     (https://drive.google.com/drive/folders/여기부분)
  *  3. 위쪽 함수 목록에서 '설치' 선택 → 실행 → 권한 허용
- *  이후 5분마다 새 녹취를 대시보드로 보냅니다. 녹취 파일 자체는 드라이브에 그대로 있어요.
+ *  이후 10분마다 새 녹취를 대시보드로 보냅니다. 녹취 파일 자체는 드라이브에 그대로 있어요.
  *
  *  [동기화] 버튼을 쓰려면(선택): 오른쪽 위 '배포' → '새 배포' → 유형 '웹 앱',
  *  실행 '나', 액세스 '회사의 모든 사용자'(또는 '모든 사용자') → 배포 → 나온 웹 앱 URL 을
@@ -26,14 +26,15 @@ const AUDIO = /\.(m4a|mp4|3gp|3ga|aac|mp3|wav|amr|ogg|opus|wma)$/i;
 const BATCH = 200;              // 한 번에 보내는 파일 수
 // 구글 외부 요청(UrlFetch) 하루 한도(회사 계정 약 10만 번) 중 지난 녹취 채우기에 쓰는 몫 — 나머지는 새 녹취용
 const BACKFILL_DAILY_FETCHES = 70000;
-const TIME_BUDGET_MS = 270000;  // 실행 시간 제한(6분) 전에 끊고 다음 회차에 이어서
+// 자동 실행 한 번에 쓰는 시간. 회사 계정의 트리거 실행 시간 한도가 하루 6시간이라
+// 10분마다(하루 144번) × 약 2분(이 시간 + 폴더 목록 읽기) ≈ 5시간 안쪽으로
+const TIME_BUDGET_MS = 90000;
 const BACKUP_DIR = '_백업';      // 이름이 '_'로 시작하는 폴더는 에이전트 폴더로 보지 않음
 
 function 설치() {
   ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
-  ScriptApp.newTrigger('동기화').timeBased().everyMinutes(5).create();
-  PropertiesService.getScriptProperties().deleteProperty('since');
-  PropertiesService.getScriptProperties().deleteProperty('before');
+  ScriptApp.newTrigger('동기화').timeBased().everyMinutes(10).create();
+  // 진행 위치(since·before)는 그대로 둠 — 다시 설치해도 처음부터 다시 보내지 않게(처음부터는 '전체다시보내기')
   roots_().forEach(function (id) { DriveApp.getFolderById(id); }); // 폴더 접근 권한 확인
   동기화();
 }
@@ -46,7 +47,7 @@ function 전체다시보내기() {
 }
 
 /**
- * 5분마다 자동 실행 + 대시보드 [동기화] 버튼(웹 앱)에서도 불림.
+ * 10분마다 자동 실행 + 대시보드 [동기화] 버튼(웹 앱)에서도 불림.
  * budgetMs: 이번 실행에 쓸 시간(버튼은 짧게, 자동 실행은 길게).
  */
 function 동기화(budgetMs) {
@@ -195,6 +196,9 @@ function syncNew_(started, budget) {
     post_({ files: [], first: false, contracts: c.ids.slice(i, i + 1000), shortcuts: c.shortcuts.slice(i, i + 1000) });
   }
 
+  // 휴대폰 통화 기록 백업(콜로그 폴더의 calls-*.xml) → 녹취의 정확한 통화시간. 실패해도 녹취 동기화는 계속
+  try { syncCallLogs_(scopes, timeLeft); } catch (e) { console.error('통화 기록 처리 중 오류: ' + e); }
+
   // 2) 지난 녹취를 최근 것부터
   const usedBefore = fetchesToday_();
   const backfillLeft = function () { return usedBefore + FETCHES < BACKFILL_DAILY_FETCHES; };
@@ -217,7 +221,8 @@ function syncNew_(started, budget) {
     }
     const chunk = [];
     raw.slice(0, n).forEach(function (x) { if (x.d) pushFile_(chunk, x.f, x.d); });
-    if (chunk.length) send_(chunk, st);
+    // 지난 녹취는 파일을 내려받지 않음(요청 한도 절약) → 대시보드가 크기로 추정하고, 콜로그가 있으면 정확한 값으로 덮음
+    if (chunk.length) send_(chunk, st, true);
     before = next;
     props.setProperty('before', before);
   }
@@ -230,9 +235,105 @@ function syncNew_(started, budget) {
   return { sent: st.sent, added: st.added, more: !!st.more };
 }
 
-function send_(chunk, st) {
-  // 길이는 대시보드에 아직 없는 녹취만 읽음(파일을 내려받아서 요청을 많이 씀)
-  const need = chunk.filter(function (f) { return f.durationMs == null; });
+const PHONE_BACKUP_FILE = /^(calls|sms)-.*\.xml$/i;
+const PHONE_BACKUP_PER_RUN = 40;  // 한 번에 읽는 백업 파일 수(파일마다 외부 요청 1번)
+const PHONE_BACKUP_MAX_BYTES = 45 * 1024 * 1024;  // 구글 스크립트가 한 번에 받을 수 있는 크기(약 50MB) 안쪽
+const ENTRIES_PER_POST = 20000;
+
+/**
+ * 에이전트 폴더 안 SMS Backup & Restore 백업(calls-*.xml 통화 기록, sms-*.xml 문자)을 읽어 대시보드로.
+ * 백업 방식이 전체·증분(새 기록만) 어느 쪽이든 빠짐없게 파일마다 한 번씩 읽는다(겹치는 기록은 대시보드가 거름).
+ * 처음엔 지난 파일 전부, 그 뒤로는 최근 2일만 살핀다.
+ * 문자 백업이 너무 크면(사진 첨부를 매번 통째로 올리는 전체 백업) 못 읽음 → 폰에서 증분 백업으로 바꾸면 해결.
+ */
+function syncCallLogs_(scopes, timeLeft) {
+  const props = PropertiesService.getScriptProperties();
+  let q = NOT_FOLDER + " and (name contains 'calls-' or name contains 'sms-')";
+  if (props.getProperty('callLogCaughtUp')) q += " and createdTime > '" + new Date(Date.now() - 2 * 86400000).toISOString() + "'";
+  const picks = [], tooBig = {};
+  scopes.forEach(function (s) {
+    callLogFiles_(s, q).forEach(function (x) {
+      if (!x.d || !PHONE_BACKUP_FILE.test(x.f.name)) return;
+      if (Number(x.f.size || 0) > PHONE_BACKUP_MAX_BYTES) tooBig[x.d.agent] = true;
+      else picks.push(x);
+    });
+  });
+  picks.sort(function (a, b) { return a.f.createdTime > b.f.createdTime ? -1 : 1; });
+  const known = {};
+  for (let i = 0; i < picks.length; i += 500) {
+    JSON.parse(call_('post', '/api/drive/calllog', { known: picks.slice(i, i + 500).map(function (x) { return x.f.id; }) })
+      .getContentText()).known.forEach(function (id) { known[id] = true; });
+  }
+  const todo = picks.filter(function (x) { return !known[x.f.id]; });
+  let done = 0, filled = 0, texts = 0;
+  for (; done < Math.min(todo.length, PHONE_BACKUP_PER_RUN) && timeLeft(); done++) {
+    const x = todo[done];
+    const sms = /^sms-/i.test(x.f.name);
+    const xml = readText_(x.f.id);
+    const entries = sms ? parseSms_(xml) : parseCallLog_(xml);
+    for (let i = 0; i === 0 || i < entries.length; i += ENTRIES_PER_POST) {
+      const body = { id: x.f.id, agent: x.d.agent };
+      body[sms ? 'sms' : 'calls'] = entries.slice(i, i + ENTRIES_PER_POST);
+      const r = JSON.parse(call_('post', '/api/drive/calllog', body).getContentText());
+      filled += r.filled || 0;
+      if (sms) texts += r.added || 0;
+    }
+  }
+  if (done >= todo.length) props.setProperty('callLogCaughtUp', '1');
+  if (done) console.log('폰 백업 파일 ' + done + '개 읽음 · 녹취 통화시간 ' + filled + '건 채움 · 새 문자 ' + texts + '건');
+  const big = Object.keys(tooBig);
+  if (big.length) console.log('문자 백업이 너무 커서 못 읽음(폰에서 증분 백업으로 바꿔 주세요): ' + big.join(', '));
+}
+
+function callLogFiles_(s, q) {
+  const fields = 'files(id,name,size,createdTime,parents)';
+  if (s.drive) {
+    return driveList_(q, fields, s.drive).map(function (f) { return { f: f, d: s.folders[(f.parents || [])[0]] || null }; });
+  }
+  const out = [];
+  Object.keys(s.folders).forEach(function (id) {
+    driveList_("'" + id + "' in parents and " + q, fields).forEach(function (f) { out.push({ f: f, d: s.folders[id] }); });
+  });
+  return out;
+}
+
+function readText_(id) {
+  const res = driveFetch_('https://www.googleapis.com/drive/v3/files/' + id + '?alt=media&supportsAllDrives=true');
+  if (res.getResponseCode() >= 300) throw new Error('폰 백업 파일을 못 읽었어요 (' + res.getResponseCode() + ')');
+  return res.getContentText('UTF-8');
+}
+
+/** XML 에서 <이름 …> 태그마다 속성 객체(따옴표 안의 '>' 도 견딤) */
+function xmlTags_(xml, name, fn) {
+  const tag = new RegExp('<' + name + '\\s((?:[^>"]|"[^"]*")*)>', 'g');
+  let m;
+  while ((m = tag.exec(xml))) {
+    const a = {};
+    m[1].replace(/([\w:]+)="([^"]*)"/g, function (_, k, v) { a[k] = v; return ''; });
+    fn(a);
+  }
+}
+
+/** <call number="010…" duration="67" date="1791435899717" type="2" …/> → [[번호, 시작 ms, 통화초, 유형], …] */
+function parseCallLog_(xml) {
+  const out = [];
+  xmlTags_(xml, 'call', function (a) {
+    if (a.date) out.push([a.number || '', Number(a.date), Number(a.duration || 0), Number(a.type || 0)]);
+  });
+  return out;
+}
+
+/** <sms address date type(1 받음·2 보냄)> · <mms address date msg_box> → [[번호, ms, 1|2, 'sms'|'mms'], …] (내용은 안 보냄) */
+function parseSms_(xml) {
+  const out = [];
+  xmlTags_(xml, 'sms', function (a) { if (a.date) out.push([a.address || '', Number(a.date), Number(a.type || 0), 'sms']); });
+  xmlTags_(xml, 'mms', function (a) { if (a.date) out.push([a.address || '', Number(a.date), Number(a.msg_box || 0), 'mms']); });
+  return out;
+}
+
+function send_(chunk, st, noDownload) {
+  // 길이는 대시보드에 아직 없는 새 녹취만 읽음(파일을 내려받아서 요청을 많이 씀)
+  const need = noDownload ? [] : chunk.filter(function (f) { return f.durationMs == null; });
   if (need.length) {
     const known = {};
     JSON.parse(call_('post', '/api/drive/known', { ids: need.map(function (f) { return f.id; }) }).getContentText())

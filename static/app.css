@@ -160,6 +160,7 @@ h1, h2, h3, p { margin: 0; }
   flex: none; height: 42px; margin-bottom: 6px; padding: 0 14px; border: 0; border-radius: 12px;
   background: var(--fill); color: var(--text); font-size: 15px;
 }
+.menu-search:focus { outline: none; box-shadow: inset 0 0 0 2px var(--blue); }
 .menu-list { overflow-y: auto; overscroll-behavior: contain; }
 .menu-item {
   width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -214,7 +215,7 @@ h1, h2, h3, p { margin: 0; }
 .chips-sm .chip[aria-pressed="true"] { background: var(--card); box-shadow: inset 0 0 0 1.5px var(--c); color: var(--text); }
 
 /* ---------- 고객 터치 분석 ---------- */
-.insights { display: grid; gap: 8px; margin-bottom: 20px; }
+.insights { display: grid; gap: 8px; margin-bottom: 20px; list-style: none; padding: 0; }
 .insights li {
   padding: 14px 16px 14px 40px; border-radius: var(--radius-sm); background: var(--fill);
   color: var(--text); font-size: 15px; line-height: 1.5; position: relative;
@@ -508,3 +509,13 @@ h1, h2, h3, p { margin: 0; }
 #uploads-list .t { font-weight: 600; }
 #uploads-list .s { font-size: 13px; color: var(--text-3); }
 .btn-stack { display: grid; gap: 8px; }
+
+/* 문자 화면 */
+.sms-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.sms-table th, .sms-table td { padding: 12px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.sms-table th { font-size: 13px; font-weight: 600; color: var(--text-3); }
+.sms-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.sms-table td.empty { text-align: center; color: var(--text-3); padding: 32px 8px; }
+.sms-table button.link { all: unset; cursor: pointer; font-weight: 600; color: var(--text); }
+.sms-table button.link:hover { color: var(--blue); }
+.sms-table button.link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }

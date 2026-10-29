@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261026-3">
+  <link rel="stylesheet" href="/static/app.css?v=20261029-1">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -63,6 +63,7 @@
           <a class="nav-item" href="#calls" data-view="calls">녹취</a>
           <a class="nav-item" href="#stats" data-view="stats">통계</a>
           <a class="nav-item" href="#analysis" data-view="analysis">분석</a>
+          <a class="nav-item" href="#sms" data-view="sms">문자</a>
           <a class="nav-item" href="#settings" data-view="settings">설정</a>
           <a class="nav-item" href="#admin" data-view="admin" hidden>관리</a>
         </nav>
@@ -375,6 +376,30 @@
       </div>
     </main>
 
+    <main class="page" id="sms-view" hidden>
+      <div class="grid">
+        <section class="card hero" id="sms-hero" aria-live="polite"></section>
+        <section class="card span-2">
+          <div class="card-head">
+            <div>
+              <h2>일별 보낸 문자</h2>
+              <p class="caption" id="sms-caption"></p>
+            </div>
+          </div>
+          <div class="chart-box"><canvas id="sms-chart" aria-label="일별 보낸 문자 수"></canvas></div>
+        </section>
+        <section class="card span-3">
+          <div class="card-head">
+            <div>
+              <h2>에이전트별 문자</h2>
+              <p class="caption" id="sms-agents-caption"></p>
+            </div>
+          </div>
+          <div class="table-scroll"><table class="sms-table" id="sms-table"></table></div>
+        </section>
+      </div>
+    </main>
+
     <!-- 모바일 하단 탭 -->
     <nav class="tabbar" aria-label="메뉴">
       <a class="tab nav-item" href="#calls" data-view="calls">
@@ -388,6 +413,10 @@
       <a class="tab nav-item" href="#analysis" data-view="analysis">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M9 21h6v-1.5H9V21Zm3-19a7 7 0 0 0-4 12.7V17a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-2.3A7 7 0 0 0 12 2Z"/></svg>
         <span>분석</span>
+      </a>
+      <a class="tab nav-item" href="#sms" data-view="sms">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 1-2Zm3 6v2h2V9H7Zm4 0v2h2V9h-2Zm4 0v2h2V9h-2Z"/></svg>
+        <span>문자</span>
       </a>
       <a class="tab nav-item" href="#settings" data-view="settings">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1L15 3h-4l-.3 2.9a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L6.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1L11 21h4l.3-2.9a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5-2.1-1.6ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z"/></svg>
@@ -471,6 +500,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261026-10"></script>
+  <script src="/static/app.js?v=20261029-1"></script>
 </body>
 </html>

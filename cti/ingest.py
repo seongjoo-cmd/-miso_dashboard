@@ -73,16 +73,21 @@ def parse_filename(name: str) -> Parsed | None:
             break
     if started is None:
         return None
-    m = _PHONE.search(stem)
+    return Parsed(started, *(parse_phone(stem) or (None, None, None)))
+
+
+def parse_phone(text: str) -> tuple[str, str, str] | None:
+    """글자 속 전화번호 → (숫자만, '010-****-5678', '010-1234-5678'). 없으면 None."""
+    m = _PHONE.search(text)
     if not m:
-        r = _REP_PHONE.search(stem)
+        r = _REP_PHONE.search(text)
         if r:
-            return Parsed(started, r.group(1) + r.group(2), f"{r.group(1)}-****", f"{r.group(1)}-{r.group(2)}")
-        return Parsed(started, None, None)
+            return r.group(1) + r.group(2), f"{r.group(1)}-****", f"{r.group(1)}-{r.group(2)}"
+        return None
     area, mid, last = m.groups()
     if not area.startswith("0"):  # +82 10 ... → 010
         area = "0" + area
-    return Parsed(started, area + mid + last, f"{area}-****-{last}", f"{area}-{mid}-{last}")
+    return area + mid + last, f"{area}-****-{last}", f"{area}-{mid}-{last}"
 
 
 def hash_key(conn: sqlite3.Connection) -> bytes:
@@ -256,6 +261,7 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
         kbps = get_setting_int(conn, "fallback_kbps")
         stats = {"added": 0, "already": 0, "recent": 0, "not_audio": 0, "failed": []}
         agents: dict[str, tuple[int, set[str]]] = {}
+        added: dict[int, list[str]] = {}  # 에이전트별 새 녹취 시각 → 통화 기록으로 통화시간 채우기
         for r in records:
             name = str(r.get("name") or "")
             agent = str(r.get("agent") or "").strip()
@@ -295,7 +301,11 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 sec, how = (size or 0) * 8 / (max(kbps, 1) * 1000), "size"
             _insert_call(conn, hk, aid, p, sec, how, key, size, str(r["id"]), uploaded, bool(r.get("contract")))
             known.add(key)
+            added.setdefault(aid, []).append(p.started_at.isoformat(sep=" "))
             stats["added"] += 1
+        from .calllog import fill_durations
+        for aid, times in added.items():
+            fill_durations(conn, aid, min(times), max(times))
         stats["agents"] = len(agents)
         conn.commit()
     batch = {"added": stats["added"], "already": stats["already"]}

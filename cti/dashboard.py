@@ -137,10 +137,21 @@ def agent_performance(conn, p: Period, agent_id: int | None) -> list[dict]:
         """,
         [*args, *([agent_id] if agent_id is not None else [])],
     ).fetchall()
+    sms = _sms_by_agent(conn, p, agent_id)
     return [
-        {**dict(r), "att_sec": round(r["att_sec"], 1) if r["att_sec"] is not None else None}
+        {**dict(r), "att_sec": round(r["att_sec"], 1) if r["att_sec"] is not None else None,
+         **sms.get(r["agent_id"], {"sms_sent": 0, "sms_customers": 0})}
         for r in rows
     ]
+
+
+def _sms_by_agent(conn, p: Period, agent_id: int | None) -> dict:
+    """에이전트별 보낸 문자 수·문자 보낸 고객 수(휴대폰 문자 백업 기준)."""
+    where, args = _where(p, agent_id)
+    where = where.replace("started_at", "sent_at")
+    return {r[0]: {"sms_sent": r[1], "sms_customers": r[2]} for r in conn.execute(
+        f"SELECT agent_id, COUNT(*), COUNT(DISTINCT NULLIF(customer_key, '')) FROM messages "
+        f"WHERE box = 2 AND {where} GROUP BY agent_id", args)}
 
 
 def daily_trend(conn, p: Period, agent_id: int | None) -> dict:

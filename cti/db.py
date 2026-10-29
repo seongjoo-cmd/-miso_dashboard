@@ -39,6 +39,42 @@ CREATE INDEX IF NOT EXISTS idx_calls_agent_started ON calls(agent_id, started_at
 CREATE INDEX IF NOT EXISTS idx_calls_customer ON calls(customer_key);
 CREATE INDEX IF NOT EXISTS idx_calls_drive ON calls(drive_file_id);
 
+-- 휴대폰 통화 기록(SMS Backup & Restore 의 calls-*.xml). 안 받은 통화까지 전부 — 녹취의 정확한 통화시간을 여기서 채운다
+CREATE TABLE IF NOT EXISTS call_log (
+    id               INTEGER PRIMARY KEY,
+    agent_id         INTEGER NOT NULL REFERENCES agents(id),
+    customer_key     TEXT NOT NULL DEFAULT '',  -- 번호를 모르면 ''(NULL 이면 UNIQUE 가 중복을 못 막음)
+    customer_masked  TEXT,
+    customer_phone   TEXT,
+    started_at       TEXT NOT NULL,  -- 로컬 시각(전화를 걸거나 받기 시작한 때)
+    duration_sec     INTEGER NOT NULL DEFAULT 0,  -- 실제 통화한 시간(안 받으면 0)
+    call_type        INTEGER,        -- 1 수신 · 2 발신 · 3 부재중 · 5 거절 …(안드로이드 값 그대로)
+    UNIQUE (agent_id, started_at, customer_key)
+);
+CREATE INDEX IF NOT EXISTS idx_call_log_agent_started ON call_log(agent_id, started_at);
+
+-- 휴대폰 문자 기록(SMS Backup & Restore 의 sms-*.xml). 내용은 저장하지 않고 상대 번호·시각·방향만
+CREATE TABLE IF NOT EXISTS messages (
+    id               INTEGER PRIMARY KEY,
+    agent_id         INTEGER NOT NULL REFERENCES agents(id),
+    customer_key     TEXT NOT NULL DEFAULT '',
+    customer_masked  TEXT,
+    customer_phone   TEXT,
+    sent_at          TEXT NOT NULL,  -- 로컬 시각
+    box              INTEGER NOT NULL,  -- 1 받은 문자 · 2 보낸 문자
+    kind             TEXT NOT NULL,     -- 'sms' | 'mms'
+    UNIQUE (agent_id, sent_at, customer_key, box, kind)
+);
+CREATE INDEX IF NOT EXISTS idx_messages_agent_sent ON messages(agent_id, sent_at);
+
+-- 이미 읽은 통화 기록·문자 백업 파일(드라이브 파일 ID)
+CREATE TABLE IF NOT EXISTS call_log_files (
+    file_id   TEXT PRIMARY KEY,
+    agent_id  INTEGER NOT NULL REFERENCES agents(id),
+    read_at   TEXT NOT NULL,
+    entries   INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

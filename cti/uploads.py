@@ -1,7 +1,7 @@
 """드라이브 연결 상태와 에이전트별 녹취 업로드 현황.
 
 - 연결 상태: Apps Script 가 대시보드에 들를 때마다(새 녹취 보내기·백업 요청 확인) 시각을 남기고,
-  새 스크립트는 회차가 끝날 때 결과(성공·오류)도 알려 준다. 자동 실행은 5분마다라서
+  새 스크립트는 회차가 끝날 때 결과(성공·오류)도 알려 준다. 자동 실행은 10분마다라서
   STALE_MIN 분 넘게 소식이 없으면 멈춘 것으로 본다.
 - 업로드 현황: 녹취 파일이 폴더에 올라온 시각(calls.uploaded_at, 없으면 통화 시각)의 최댓값.
 """
@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from .db import get_setting, set_setting
 
-STALE_MIN = 15
+STALE_MIN = 25
 
 
 def _now() -> datetime:

@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import auth, signup, backup, calls, dashboard, demo, drive_backup, ingest, slack, touches, uploads
+from . import auth, signup, backup, calllog, calls, dashboard, demo, drive_backup, ingest, slack, sms, touches, uploads
 from .db import connect, get_setting, get_setting_int, set_setting
 from .periods import PRESETS, resolve
 
@@ -378,6 +378,18 @@ def make_handler(cfg: Config):
                 if not isinstance(ids, list) or len(ids) > ingest.MAX_RECORDS:
                     raise ApiError(HTTPStatus.BAD_REQUEST, f"ids 는 {ingest.MAX_RECORDS}개 이하 목록이어야 해요.")
                 return self._send_json(200, {"known": ingest.known_drive_files(conn, ids)})
+            if method == "POST" and path == "/api/drive/calllog":
+                self._check_drive_token(conn)
+                body = self._read_json()
+                if isinstance(body.get("known"), list):  # 이미 읽은 통화 기록 파일인지만 물을 때
+                    return self._send_json(200, {"known": calllog.known_files(conn, body["known"])})
+                fid, agent = body.get("id"), str(body.get("agent") or "").strip()
+                kind = "sms" if "sms" in body else "calls"
+                entries = body.get(kind)
+                if not isinstance(entries, list) or len(entries) > calllog.MAX_ENTRIES or not isinstance(fid, str) or not agent:
+                    raise ApiError(HTTPStatus.BAD_REQUEST, f"id·agent 와 {calllog.MAX_ENTRIES}개 이하 calls/sms 목록이 필요해요.")
+                ingest_fn = calllog.ingest_messages if kind == "sms" else calllog.ingest_file
+                return self._send_json(200, ingest_fn(conn, fid, agent, entries))
             if method == "POST" and path == "/api/drive/run":
                 self._check_drive_token(conn)
                 return self._send_json(200, uploads.record_run(conn, self._read_json()))
@@ -524,6 +536,9 @@ def make_handler(cfg: Config):
             if method == "GET" and path == "/api/analysis":
                 cur, _ = _parse_period(cfg, q)
                 return self._send_json(200, touches.analyze(conn, cur, _parse_agent(q)))
+            if method == "GET" and path == "/api/sms":
+                cur, _ = _parse_period(cfg, q)
+                return self._send_json(200, sms.summary(conn, cur, _parse_agent(q)))
             if method == "GET" and path == "/api/dashboard":
                 cur, prev = _parse_period(cfg, q)
                 return self._send_json(200, dashboard.build(conn, cur, prev, _parse_agent(q)))

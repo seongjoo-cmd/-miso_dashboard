@@ -270,7 +270,7 @@
   }
 
   // ---------- 메뉴 ----------
-  const VIEWS = ["calls", "stats", "analysis", "settings", "admin"];
+  const VIEWS = ["calls", "stats", "analysis", "sms", "settings", "admin"];
   let dashboardStale = true;
   let callsLoaded = false;
   async function route() {
@@ -285,8 +285,10 @@
     $("#calls-view").hidden = view !== "calls";
     $("#dashboard-view").hidden = view !== "stats";
     $("#analysis-view").hidden = view !== "analysis";
+    $("#sms-view").hidden = view !== "sms";
     // 기간·에이전트 필터는 하나 — 보이는 화면 맨 위로 옮김
-    if (view === "stats" || view === "analysis") $(view === "stats" ? "#dashboard-view" : "#analysis-view").prepend($(".filterbar"));
+    const FILTER_HOME = { stats: "#dashboard-view", analysis: "#analysis-view", sms: "#sms-view" };
+    if (FILTER_HOME[view]) $(FILTER_HOME[view]).prepend($(".filterbar"));
     $("#settings-view").hidden = view !== "settings";
     $("#admin-view").hidden = view !== "admin";
     closeSheet();
@@ -298,6 +300,8 @@
       if (dashboardStale) { dashboardStale = false; await load(); }
     } else if (view === "analysis") {
       await loadAnalysis();
+    } else if (view === "sms") {
+      await loadSms();
     } else if (view === "admin") {
       await loadUsers();
     } else {
@@ -312,6 +316,7 @@
     const view = location.hash.slice(1) || "calls";
     if (view === "calls" && callsLoaded && cs.items.length <= 50 && !cs.sameAs) { dashboardStale = true; loadCalls(); }
     else if (view === "stats" && !$("#sheet").classList.contains("open")) load();
+    else if (view === "sms") { dashboardStale = true; loadSms(); }
     else dashboardStale = true;
   }, 60000);
 
@@ -393,6 +398,7 @@
   let loadSeq = 0;
   async function load() {
     if (!$("#analysis-view").hidden) { dashboardStale = true; return loadAnalysis(); }  // 분석 화면에서 필터를 바꿈
+    if (!$("#sms-view").hidden) { dashboardStale = true; return loadSms(); }
     const seq = ++loadSeq;
     const q = periodQuery();
     if (state.agentId) q.set("agent_id", state.agentId);
@@ -413,6 +419,18 @@
     try {
       const t = await api(`/api/analysis?${q}`);
       if (seq === analysisSeq) renderTouch(t);
+    } catch (err) {
+      if (state.user) toast(err.message);
+    }
+  }
+  let smsSeq = 0;
+  async function loadSms() {
+    const seq = ++smsSeq;
+    const q = periodQuery();
+    if (state.agentId) q.set("agent_id", state.agentId);
+    try {
+      const s = await api(`/api/sms?${q}`);
+      if (seq === smsSeq) renderSms(s);
     } catch (err) {
       if (state.user) toast(err.message);
     }
@@ -596,6 +614,51 @@
     });
   }
 
+  // ---------- 문자 ----------
+  function renderSms(s) {
+    const p = PERIOD[state.preset] || PERIOD.custom;
+    const pct = (v) => (v == null ? "–" : `${v}%`);
+    const insight = !s.has_data
+      ? "아직 문자 기록이 없어요. 에이전트 폰의 SMS Backup & Restore 를 증분 백업 + 메시지 켜기로 바꾸면 쌓여요."
+      : s.contract_pct_texted != null && s.contract_pct_not_texted != null
+        ? ["문자를 받은 고객의 계약률은 ", el("b", {}, pct(s.contract_pct_texted)),
+           `, 안 받은 고객은 ${pct(s.contract_pct_not_texted)}예요`]
+        : "이 기간에는 비교할 고객이 없어요.";
+    const minis = [
+      { label: "문자 보낸 고객", v: `${fmtInt(s.customers)}명` },
+      { label: "받은 문자", v: `${fmtInt(s.received)}건` },
+      { label: `통화 후 ${s.follow_hours}시간 안 문자`, v: pct(s.follow_pct), title: "이 기간에 통화한 고객 중 통화 뒤 문자를 보낸 비율" },
+    ];
+    $("#sms-hero").replaceChildren(
+      el("div", { class: "hero-label" }, `${p.now} 보낸 문자`),
+      el("div", { class: "hero-value" }, fmtInt(s.sent), el("small", {}, "건")),
+      el("div", { class: "mini-grid" }, minis.map((x) => el("div", { class: "mini", title: x.title || null },
+        el("div", { class: "k" }, x.label), el("div", { class: "v" }, x.v)))),
+      el("p", { class: "hero-insight" }, insight));
+
+    const d = s.daily, max = Math.max(0, ...d.sent);
+    $("#sms-caption").textContent = max ? `가장 많이 보낸 날은 ${md(d.dates[d.sent.indexOf(max)])} · ${fmtInt(max)}건` : "보낸 문자가 없어요";
+    const opts = baseOptions();
+    opts.plugins.tooltip.callbacks = { title: (items) => d.dates[items[0].dataIndex], label: (item) => `${fmtInt(item.raw)}건` };
+    upsert("sms-chart", {
+      type: "bar",
+      data: { labels: d.dates.map(md), datasets: [{ data: d.sent, backgroundColor: css("--blue"), borderRadius: 6, borderSkipped: false }] },
+      options: opts,
+    });
+
+    $("#sms-agents-caption").textContent = `통화 후 문자: 통화한 고객 중 ${s.follow_hours}시간 안에 문자를 보낸 비율`;
+    const rows = s.agents.filter((r) => r.sent || r.received || r.called);
+    $("#sms-table").replaceChildren(
+      el("thead", {}, el("tr", {}, ["에이전트", "보낸 문자", "고객", "통화 후 문자", "받은 문자"].map((h, i) => el("th", { class: i ? "num" : null }, h)))),
+      el("tbody", {}, rows.length ? rows.map((r) => el("tr", {},
+        el("td", {}, el("button", { class: "link", onclick: () => openSheet(r.agent_id) }, r.name)),
+        el("td", { class: "num" }, `${fmtInt(r.sent)}건`),
+        el("td", { class: "num" }, `${fmtInt(r.customers)}명`),
+        el("td", { class: "num" }, r.follow_pct == null ? "–" : `${r.follow_pct}% (${fmtInt(r.followed)}/${fmtInt(r.called)})`),
+        el("td", { class: "num" }, `${fmtInt(r.received)}건`)))
+        : [el("tr", {}, el("td", { colspan: 5, class: "empty" }, "이 기간에는 문자 기록이 없어요"))]));
+  }
+
   // ---------- 고객 컨택 분석 ----------
   function renderTouch(t) {
     const s = t.summary, decided = s.contract + s.fail;
@@ -659,6 +722,7 @@
     { key: "total_sec", label: "통화시간", fmt: fmtDur },
     { key: "att_sec", label: "평균", fmt: fmtDur },
     { key: "longest_sec", label: "최장", fmt: fmtDur },
+    { key: "sms_sent", label: "문자", fmt: (v) => `${fmtInt(v)}건` },
   ];
   function renderRank(rows) {
     const cur = RANK.find((r) => r.key === state.rankKey) || RANK[0];
@@ -675,7 +739,8 @@
         el("span", { class: "rank-main" },
           el("div", { class: "rank-name" }, r.name),
           el("div", { class: "rank-sub" },
-            `처리 ${fmtInt(r.handled)}건 · 평균 ${fmtClock(r.att_sec)} · 최장 ${fmtClock(r.longest_sec)}`),
+            `처리 ${fmtInt(r.handled)}건 · 평균 ${fmtClock(r.att_sec)} · 최장 ${fmtClock(r.longest_sec)}` +
+            (r.sms_sent ? ` · 문자 ${fmtInt(r.sms_sent)}건(${fmtInt(r.sms_customers)}명)` : "")),
           el("div", { class: "rank-bar" }, el("i", { style: `width:${((r[cur.key] || 0) / max) * 100}%` }))),
         el("span", { class: "rank-val" }, cur.fmt(r[cur.key]))))) : [el("li", { class: "empty" }, "에이전트가 없어요")]));
   }
