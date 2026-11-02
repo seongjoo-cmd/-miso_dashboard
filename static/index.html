@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261029-1">
+  <link rel="stylesheet" href="/static/app.css?v=20261102-1">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -253,6 +253,7 @@
       <section class="card" id="drive-card" hidden>
         <h2>구글 드라이브 연결</h2>
         <div class="conn-box" id="drive-status" hidden></div>
+        <div class="sync-progress" id="sync-progress" hidden></div>
         <div class="field">
           <label for="drive-folder">녹취 폴더 주소</label>
           <input id="drive-folder" class="text-input" type="url" inputmode="url" autocomplete="off"
@@ -500,6 +501,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261029-1"></script>
+  <script src="/static/app.js?v=20261102-1"></script>
 </body>
 </html>

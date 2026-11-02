@@ -1218,6 +1218,26 @@
   $("#call-backdrop").addEventListener("click", closeCall);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCall(); });
 
+  const SPEEDS = [1, 1.25, 1.5, 2];
+  function audioPlayer(src, onFail) {
+    let rate = 1;
+    try { rate = Number(localStorage.getItem("playRate")) || 1; } catch { /* 저장소를 못 쓰면 1배속 */ }
+    if (!SPEEDS.includes(rate)) rate = 1;
+    const audio = el("audio", { controls: true, autoplay: true, preload: "auto", src });
+    audio.playbackRate = audio.defaultPlaybackRate = rate;
+    if (onFail) audio.addEventListener("error", onFail, { once: true });
+    const seg = el("div", { class: "seg speed-seg", role: "radiogroup", "aria-label": "재생 속도" });
+    const draw = () => seg.replaceChildren(...SPEEDS.map((s) => el("button", {
+      type: "button", role: "radio", "aria-checked": String(s === rate),
+      onclick: () => {
+        rate = s; audio.playbackRate = audio.defaultPlaybackRate = s; draw();
+        try { localStorage.setItem("playRate", String(s)); } catch { /* 무시 */ }
+      },
+    }, `${s}배`)));
+    draw();
+    return [audio, seg];
+  }
+
   function renderCall(d) {
     $("#call-avatar").textContent = d.agent_name.slice(0, 1);
     $("#call-title").textContent = d.customer_masked || "번호 없는 통화";
@@ -1227,15 +1247,16 @@
     if (!d.play) {
       player.replaceChildren(el("div", { class: "player-none" }, "이 녹취는 바로 들을 수 없어요 (드라이브 연결 전에 들어온 기록)"));
     } else if (d.play.type === "demo") {
-      player.replaceChildren(
-        el("audio", { controls: true, autoplay: true, preload: "auto", src: d.play.url }),
+      player.replaceChildren(...audioPlayer(d.play.url, null),
         el("p", { class: "player-note" }, "데모용 소리예요. 드라이브를 연결하면 실제 녹취가 재생돼요."));
     } else {
-      player.replaceChildren(
-        el("iframe", { src: d.play.preview_url, allow: "autoplay", title: "녹취 재생", loading: "lazy" }),
-        el("div", { class: "player-links" },
-          el("a", { class: "btn btn-secondary", href: d.play.open_url, target: "_blank", rel: "noopener" }, "드라이브에서 열기")),
-        el("p", { class: "player-note" }, "회사 구글 계정으로 로그인돼 있어야 들을 수 있어요."));
+      const links = el("div", { class: "player-links" },
+        el("a", { class: "btn btn-secondary", href: d.play.open_url, target: "_blank", rel: "noopener" }, "드라이브에서 열기"));
+      const note = el("p", { class: "player-note" }, "회사 구글 계정으로 로그인돼 있어야 들을 수 있어요.");
+      // 바로 재생(배속 가능)을 먼저 시도하고, 브라우저가 막으면 드라이브 미리보기로
+      const fallback = () => player.replaceChildren(
+        el("iframe", { src: d.play.preview_url, allow: "autoplay", title: "녹취 재생", loading: "lazy" }), links, note);
+      player.replaceChildren(...audioPlayer(d.play.audio_url, fallback), links, note);
     }
 
     const row = (k, v) => el("div", { class: "status-row" }, el("span", { class: "k" }, k), el("span", { class: "v" }, v));
@@ -1298,6 +1319,24 @@
     box.replaceChildren(el("div", { class: `conn-status ${cls}` }, text),
       ...subs.map((s, i) => el("div", { class: `conn-sub${st.state === "error" && i === 0 ? " err" : ""}` }, s)));
   }
+  // 동기화가 어디까지 됐는지
+  function renderProgress(p) {
+    const box = $("#sync-progress");
+    box.hidden = !p;
+    if (!p) return;
+    const day = (s) => (s ? `${s.slice(0, 4)}년 ${+s.slice(5, 7)}월 ${+s.slice(8, 10)}일` : "–");
+    const back = p.backfill_done ? "지난 녹취까지 모두 가져왔어요"
+      : p.backfill_before ? `지난 녹취는 ${day(p.backfill_before)} 이전을 가져오는 중이에요`
+        : p.oldest_upload ? `가장 오래된 녹취는 ${day(p.oldest_upload)}에 올라온 거예요` : "아직 가져온 녹취가 없어요";
+    const row = (k, v) => el("div", { class: "status-row" }, el("span", { class: "k" }, k), el("span", { class: "v" }, v));
+    box.replaceChildren(
+      el("h3", {}, "가져온 데이터"),
+      el("p", { class: "conn-sub" }, back),
+      row("녹취", `${fmtInt(p.calls)}건`),
+      row("통화시간 추정값", `${fmtInt(p.estimated)}건`),
+      row("통화 기록(콜로그)", `${fmtInt(p.call_log)}건`),
+      row("문자", `${fmtInt(p.messages)}건`));
+  }
   // ---------- 에이전트별 업로드 · 슬랙 알림 ----------
   async function loadUploads() {
     try { renderUploads(await api("/api/uploads")); } catch (err) { toast(err.message); }
@@ -1309,6 +1348,7 @@
       state.driveStatus = u.drive; renderSyncLine();
       if (!$("#drive-card").hidden) renderDriveConn(u.drive);
     }
+    renderProgress(u.progress);
     $("#uploads-list").replaceChildren(...(u.agents.length ? u.agents.map((a) => el("li", {},
       el("span", { class: "avatar" }, a.name.slice(0, 1)),
       el("div", { class: "main" },

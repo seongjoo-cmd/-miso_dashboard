@@ -34,6 +34,8 @@ def record_run(conn, body: dict) -> dict:
         "more": bool(body.get("more")),
         "error": str(body.get("error") or "")[:300] or None,
     }
+    if body.get("before"):  # 지난 녹취 채우기 위치(드라이브 UTC 시각 또는 'done') — 예전 스크립트는 안 보냄
+        set_setting(conn, "drive_backfill_before", str(body["before"])[:40])
     set_setting(conn, "drive_last_run", json.dumps(run, ensure_ascii=False))
     if run["ok"]:
         set_setting(conn, "drive_last_ok", run["at"])
@@ -58,6 +60,27 @@ def drive_status(conn, now: datetime | None = None) -> dict:
         state = "ok"
     return {"state": state, "last_seen": seen, "last_ok": get_setting(conn, "drive_last_ok"),
             "last_run": run, "stale_min": STALE_MIN}
+
+
+def sync_progress(conn) -> dict:
+    """대시보드에 들어온 양: 녹취 수·가장 오래된 녹취가 올라온 날·추정 통화시간 수·통화 기록·문자 수."""
+    r = conn.execute(
+        "SELECT COUNT(*) AS n, MIN(uploaded_at) AS oldest, "
+        "SUM(CASE WHEN duration_source = 'size' THEN 1 ELSE 0 END) AS estimated "
+        "FROM calls WHERE drive_file_id IS NOT NULL AND drive_file_id <> 'demo'").fetchone()
+    before = get_setting(conn, "drive_backfill_before")
+    return {
+        "calls": r["n"], "oldest_upload": r["oldest"], "estimated": int(r["estimated"] or 0),
+        "backfill_done": before == "done",
+        "backfill_before": None if before in (None, "done") else _local(before),
+        "call_log": conn.execute("SELECT COUNT(*) FROM call_log").fetchone()[0],
+        "messages": conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0],
+    }
+
+
+def _local(iso: str) -> str | None:
+    from .ingest import local_time
+    return local_time(iso)
 
 
 def agent_uploads(conn, today: date) -> list[dict]:

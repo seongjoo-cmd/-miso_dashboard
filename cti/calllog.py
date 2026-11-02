@@ -38,8 +38,9 @@ def _phone(hk: bytes, number: str) -> tuple[str, str | None, str | None]:
     return (ingest.customer_key(hk, ph[0]), ph[1], ph[2]) if ph else ("", None, number[:40] or None)
 
 
-def ingest_messages(conn, file_id: str, agent: str, entries: list) -> dict:
-    """entries: [[상대 번호, 시각 epoch ms, 1 받음·2 보냄, 'sms'|'mms'], ...] → 새로 넣은 문자 수."""
+def ingest_messages(conn, file_id: str, agent: str, entries: list, done: bool = True) -> dict:
+    """entries: [[상대 번호, 시각 epoch ms, 1 받음·2 보냄, 'sms'|'mms'], ...] → 새로 넣은 문자 수.
+    done=False: 큰 파일을 나눠 읽는 중 — 마지막 조각까지 읽어야 '읽은 파일'로 표시."""
     with ingest._lock:
         hk = ingest.hash_key(conn)
         aid = ingest._agent_for_folder(conn, agent)
@@ -56,8 +57,9 @@ def ingest_messages(conn, file_id: str, agent: str, entries: list) -> dict:
             "INSERT OR IGNORE INTO messages(agent_id, customer_key, customer_masked, customer_phone, sent_at, box, kind) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
         added = conn.execute("SELECT COUNT(*) FROM messages WHERE agent_id = ?", (aid,)).fetchone()[0] - before
-        conn.execute("INSERT OR IGNORE INTO call_log_files(file_id, agent_id, read_at, entries) VALUES (?, ?, ?, ?)",
-                     (file_id, aid, _ts(datetime.now()), len(rows)))
+        if done:
+            conn.execute("INSERT OR IGNORE INTO call_log_files(file_id, agent_id, read_at, entries) VALUES (?, ?, ?, ?)",
+                         (file_id, aid, _ts(datetime.now()), len(rows)))
         conn.commit()
     return {"added": added}
 

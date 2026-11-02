@@ -140,6 +140,8 @@ def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
         play = {"type": "demo", "url": DEMO_AUDIO}
     elif fid:
         play = {"type": "drive",
+                # 브라우저가 회사 구글 로그인으로 파일을 바로 받아 <audio>로 재생(배속 가능). 막히면 미리보기로
+                "audio_url": f"https://drive.usercontent.google.com/download?id={fid}&export=download",
                 "preview_url": f"https://drive.google.com/file/d/{fid}/preview",
                 "open_url": f"https://drive.google.com/file/d/{fid}/view"}
     else:

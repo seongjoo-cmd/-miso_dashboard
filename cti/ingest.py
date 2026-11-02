@@ -260,7 +260,14 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
         hk = hash_key(conn)
         kbps = get_setting_int(conn, "fallback_kbps")
         stats = {"added": 0, "already": 0, "recent": 0, "not_audio": 0, "failed": []}
-        agents: dict[str, tuple[int, set[str]]] = {}
+        agents: dict[str, int] = {}
+        # 이 묶음 파일 중 이미 있는 것만 조회(에이전트의 녹취 전체를 매번 읽지 않게 — 수만 건이라 DB 부하)
+        keys = [source_key(hk, f"drive:{r['id']}") for r in records if isinstance(r, dict) and r.get("id")]
+        known: set[str] = set()
+        for i in range(0, len(keys), 500):
+            chunk = keys[i:i + 500]
+            known.update(x[0] for x in conn.execute(
+                f"SELECT source_key FROM calls WHERE source_key IN ({','.join('?' * len(chunk))})", chunk))
         added: dict[int, list[str]] = {}  # 에이전트별 새 녹취 시각 → 통화 기록으로 통화시간 채우기
         for r in records:
             name = str(r.get("name") or "")
@@ -271,10 +278,8 @@ def ingest_records(conn: sqlite3.Connection, records: list[dict], first: bool = 
                 stats["not_audio"] += 1
                 continue
             if agent not in agents:
-                aid = _agent_for_folder(conn, agent)
-                known = {x[0] for x in conn.execute("SELECT source_key FROM calls WHERE agent_id = ?", (aid,))}
-                agents[agent] = (aid, known)
-            aid, known = agents[agent]
+                agents[agent] = _agent_for_folder(conn, agent)
+            aid = agents[agent]
             key = source_key(hk, f"drive:{r['id']}")
             uploaded = local_time(r.get("created"))
             if key in known:

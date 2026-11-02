@@ -153,3 +153,22 @@ class SlackTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyncProgressTest(unittest.TestCase):
+    def test_counts_and_backfill_position(self):
+        conn = connect(":memory:")
+        ingest.ingest_records(conn, [
+            {"id": "f1", "agent": "a", "name": "01012345678_20261012_103015.m4a", "size": 1000,
+             "durationMs": None, "created": "2026-10-12T01:00:00Z"},
+            {"id": "f2", "agent": "a", "name": "01012345678_20261013_103015.m4a", "size": 1000,
+             "durationMs": 5000, "created": "2026-10-13T01:00:00Z"}])
+        uploads.record_run(conn, {"ok": True, "before": "2026-10-12T00:00:00.000Z"})
+        p = uploads.sync_progress(conn)
+        self.assertEqual((p["calls"], p["estimated"], p["backfill_done"]), (2, 1, False))
+        self.assertTrue(p["oldest_upload"].startswith("2026-10-12"))
+        self.assertTrue(p["backfill_before"].startswith("2026-10-12"))
+        uploads.record_run(conn, {"ok": True, "before": "done"})
+        self.assertTrue(uploads.sync_progress(conn)["backfill_done"])
+        uploads.record_run(conn, {"ok": True})  # 예전 스크립트: 위치를 안 보내도 그대로
+        self.assertTrue(uploads.sync_progress(conn)["backfill_done"])

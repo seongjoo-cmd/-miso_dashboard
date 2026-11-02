@@ -388,8 +388,9 @@ def make_handler(cfg: Config):
                 entries = body.get(kind)
                 if not isinstance(entries, list) or len(entries) > calllog.MAX_ENTRIES or not isinstance(fid, str) or not agent:
                     raise ApiError(HTTPStatus.BAD_REQUEST, f"id·agent 와 {calllog.MAX_ENTRIES}개 이하 calls/sms 목록이 필요해요.")
-                ingest_fn = calllog.ingest_messages if kind == "sms" else calllog.ingest_file
-                return self._send_json(200, ingest_fn(conn, fid, agent, entries))
+                if kind == "sms":
+                    return self._send_json(200, calllog.ingest_messages(conn, fid, agent, entries, not body.get("partial")))
+                return self._send_json(200, calllog.ingest_file(conn, fid, agent, entries))
             if method == "POST" and path == "/api/drive/run":
                 self._check_drive_token(conn)
                 return self._send_json(200, uploads.record_run(conn, self._read_json()))
@@ -497,6 +498,7 @@ def make_handler(cfg: Config):
                 return self._send_json(200, uploads.drive_status(conn))
             if method == "GET" and path == "/api/uploads":
                 out = {"drive": uploads.drive_status(conn) if SOURCE == "drive" else None,
+                       "progress": uploads.sync_progress(conn) if SOURCE == "drive" else None,
                        "agents": uploads.agent_uploads(conn, cfg.today())}
                 if user["role"] == "admin":
                     out["slack"] = slack.config(conn)

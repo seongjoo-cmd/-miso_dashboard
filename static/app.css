@@ -519,3 +519,12 @@ h1, h2, h3, p { margin: 0; }
 .sms-table button.link { all: unset; cursor: pointer; font-weight: 600; color: var(--text); }
 .sms-table button.link:hover { color: var(--blue); }
 .sms-table button.link:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+
+/* 녹취 재생 속도 */
+.speed-seg { margin: 8px 0 0; }
+.speed-seg button[aria-checked="true"] { background: var(--card); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+
+/* 가져온 데이터(동기화 진행) */
+.sync-progress { margin: 12px 0 4px; padding: 16px; border-radius: var(--radius-sm); background: var(--fill); }
+.sync-progress h3 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
+.sync-progress .conn-sub { margin-bottom: 8px; }

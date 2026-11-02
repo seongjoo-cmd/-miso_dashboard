@@ -25,7 +25,9 @@ const CONTRACT_DIR = '계약완료';  // 에이전트 폴더 안 이 폴더의 �
 const AUDIO = /\.(m4a|mp4|3gp|3ga|aac|mp3|wav|amr|ogg|opus|wma)$/i;
 const BATCH = 200;              // 한 번에 보내는 파일 수
 // 구글 외부 요청(UrlFetch) 하루 한도(회사 계정 약 10만 번) 중 지난 녹취 채우기에 쓰는 몫 — 나머지는 새 녹취용
-const BACKFILL_DAILY_FETCHES = 70000;
+const BACKFILL_DAILY_FETCHES = 30000;
+// 이 스크립트가 하루(한국 날짜)에 쓰는 외부 요청 상한. 넘으면 그날은 멈춤 — 같은 계정의 다른 스크립트·작업이 쓸 몫을 남김
+const DAILY_FETCH_CAP = 50000;
 // 자동 실행 한 번에 쓰는 시간. 회사 계정의 트리거 실행 시간 한도가 하루 6시간이라
 // 10분마다(하루 144번) × 약 2분(이 시간 + 폴더 목록 읽기) ≈ 5시간 안쪽으로
 const TIME_BUDGET_MS = 90000;
@@ -54,6 +56,16 @@ function 동기화(budgetMs) {
   const budget = typeof budgetMs === 'number' ? budgetMs : TIME_BUDGET_MS;  // 자동 실행은 이벤트 객체가 들어옴
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) { console.log('이미 동기화 중이라 건너뜀'); return { busy: true }; }
+  if (fetchesToday_() >= DAILY_FETCH_CAP) {  // 오늘 몫을 다 씀 → 대시보드에 한 줄만 알리고 끝
+    const msg = '오늘 쓸 요청 몫(' + DAILY_FETCH_CAP + '번)을 다 써서 내일 이어서 해요';
+    console.log(msg);
+    try {
+      UrlFetchApp.fetch(CTI_URL.replace(/\/$/, '') + '/api/drive/run', { method: 'post', contentType: 'application/json',
+        headers: { 'X-CTI-Token': CTI_TOKEN }, payload: JSON.stringify({ ok: false, error: msg }), muteHttpExceptions: true });
+    } catch (e) { /* 계정 한도까지 찼으면 못 알림 */ }
+    lock.releaseLock();
+    return { capped: true };
+  }
   try {
     const started = Date.now();
     const result = { added: 0, backups: 0 };
@@ -69,7 +81,7 @@ function 동기화(budgetMs) {
       throw e;
     }
     result.added = s.added; result.sent = s.sent; result.more = s.more;
-    report_({ ok: true, added: result.added, found: s.sent, more: result.more });
+    report_({ ok: true, added: result.added, found: s.sent, more: result.more, before: s.before });  // before: 지난 녹취를 어디까지 채웠는지
     return result;
   } finally {
     saveFetches_();
@@ -79,6 +91,9 @@ function 동기화(budgetMs) {
 
 let FETCHES = 0;  // 이번 실행에서 쓴 외부 요청 수
 function fetch_(url, opt) {
+  if (fetchesToday_() + FETCHES >= DAILY_FETCH_CAP) {
+    throw new Error('오늘 쓸 요청 몫(' + DAILY_FETCH_CAP + '번)을 다 써서 내일 이어서 해요. 계정의 다른 작업이 쓸 몫은 남겨 뒀어요.');
+  }
   FETCHES++;
   return UrlFetchApp.fetch(url, opt);
 }
@@ -232,7 +247,7 @@ function syncNew_(started, budget) {
 
   if (before !== 'done' && !backfillLeft()) console.log('오늘 지난 녹취 채우기 몫을 다 써서 내일 이어서 해요(새 녹취는 계속 가져와요)');
   console.log('보낸 파일 ' + st.sent + ' (새로 추가 ' + st.added + ')' + (before === 'done' ? ' · 지난 녹취 모두 보냄' : ' · 지난 녹취는 ' + before + ' 이전부터 이어서'));
-  return { sent: st.sent, added: st.added, more: !!st.more };
+  return { sent: st.sent, added: st.added, more: !!st.more, before: before };
 }
 
 const PHONE_BACKUP_FILE = /^(calls|sms)-.*\.xml$/i;
@@ -244,18 +259,19 @@ const ENTRIES_PER_POST = 20000;
  * 에이전트 폴더 안 SMS Backup & Restore 백업(calls-*.xml 통화 기록, sms-*.xml 문자)을 읽어 대시보드로.
  * 백업 방식이 전체·증분(새 기록만) 어느 쪽이든 빠짐없게 파일마다 한 번씩 읽는다(겹치는 기록은 대시보드가 거름).
  * 처음엔 지난 파일 전부, 그 뒤로는 최근 2일만 살핀다.
- * 문자 백업이 너무 크면(사진 첨부를 매번 통째로 올리는 전체 백업) 못 읽음 → 폰에서 증분 백업으로 바꾸면 해결.
+ * 45MB 넘는 문자 백업(사진까지 매번 통째로 올리는 전체 백업)은 readBigSms_ 가 나눠 읽는다.
  */
 function syncCallLogs_(scopes, timeLeft) {
   const props = PropertiesService.getScriptProperties();
   let q = NOT_FOLDER + " and (name contains 'calls-' or name contains 'sms-')";
   if (props.getProperty('callLogCaughtUp')) q += " and createdTime > '" + new Date(Date.now() - 2 * 86400000).toISOString() + "'";
-  const picks = [], tooBig = {};
+  const picks = [], big = {};
   scopes.forEach(function (s) {
     callLogFiles_(s, q).forEach(function (x) {
       if (!x.d || !PHONE_BACKUP_FILE.test(x.f.name)) return;
-      if (Number(x.f.size || 0) > PHONE_BACKUP_MAX_BYTES) tooBig[x.d.agent] = true;
-      else picks.push(x);
+      if (Number(x.f.size || 0) <= PHONE_BACKUP_MAX_BYTES) picks.push(x);
+      // 큰 파일 = 사진까지 매번 통째로 올리는 전체 문자 백업 → 에이전트마다 가장 최근 것 하나만 나눠 읽음
+      else if (/^sms-/i.test(x.f.name) && (!big[x.d.agent] || big[x.d.agent].f.createdTime < x.f.createdTime)) big[x.d.agent] = x;
     });
   });
   picks.sort(function (a, b) { return a.f.createdTime > b.f.createdTime ? -1 : 1; });
@@ -281,8 +297,51 @@ function syncCallLogs_(scopes, timeLeft) {
   }
   if (done >= todo.length) props.setProperty('callLogCaughtUp', '1');
   if (done) console.log('폰 백업 파일 ' + done + '개 읽음 · 녹취 통화시간 ' + filled + '건 채움 · 새 문자 ' + texts + '건');
-  const big = Object.keys(tooBig);
-  if (big.length) console.log('문자 백업이 너무 커서 못 읽음(폰에서 증분 백업으로 바꿔 주세요): ' + big.join(', '));
+  if (timeLeft()) readBigSms_(Object.keys(big).map(function (k) { return big[k]; }), timeLeft);
+}
+
+const SMS_CHUNK_BYTES = 20 * 1024 * 1024;
+const SMS_OVERLAP_BYTES = 64 * 1024;  // 조각 경계에 걸친 문자 태그를 놓치지 않게 앞 조각 끝을 겹쳐 읽음(중복은 대시보드가 거름)
+
+/**
+ * 큰 전체 문자 백업(수백 MB~GB)을 20MB씩 나눠 읽는다. 전체 백업은 예전 문자까지 다 들어 있어서
+ * 에이전트마다 하루 한 번, 가장 최근 파일만 읽으면 된다. 읽던 위치는 저장해 두고 다음 회차에 이어서.
+ */
+function readBigSms_(cands, timeLeft) {
+  const props = PropertiesService.getScriptProperties();
+  const today = today_();
+  let cur = JSON.parse(props.getProperty('smsCursor') || 'null');
+  const queue = cands.filter(function (x) {
+    return props.getProperty('smsBigDay:' + x.d.agent) !== today && !(cur && cur.id === x.f.id);
+  });
+  let chunks = 0, texts = 0;
+  while (timeLeft()) {
+    if (!cur) {
+      const x = queue.shift();
+      if (!x) break;
+      cur = { id: x.f.id, agent: x.d.agent, size: Number(x.f.size), offset: 0 };
+    }
+    const end = Math.min(cur.offset + SMS_CHUNK_BYTES, cur.size) - 1;
+    const res = driveFetch_('https://www.googleapis.com/drive/v3/files/' + cur.id + '?alt=media&supportsAllDrives=true',
+      { Range: 'bytes=' + cur.offset + '-' + end });
+    if (res.getResponseCode() >= 300) {  // 지워졌거나 못 읽음 → 이 파일은 건너뜀
+      console.error(cur.agent + ' 문자 백업을 못 읽었어요 (' + res.getResponseCode() + ')');
+      props.setProperty('smsBigDay:' + cur.agent, today);
+      cur = null; props.deleteProperty('smsCursor');
+      continue;
+    }
+    const last = end + 1 >= cur.size;
+    const entries = parseSms_(res.getContentText('UTF-8'));
+    for (let i = 0; i === 0 || i < entries.length; i += ENTRIES_PER_POST) {
+      const r = JSON.parse(call_('post', '/api/drive/calllog',
+        { id: cur.id, agent: cur.agent, sms: entries.slice(i, i + ENTRIES_PER_POST), partial: !last }).getContentText());
+      texts += r.added || 0;
+    }
+    chunks++;
+    if (last) { props.setProperty('smsBigDay:' + cur.agent, today); cur = null; props.deleteProperty('smsCursor'); }
+    else { cur.offset = end + 1 - SMS_OVERLAP_BYTES; props.setProperty('smsCursor', JSON.stringify(cur)); }
+  }
+  if (chunks) console.log('큰 문자 백업 ' + chunks + '조각 읽음 · 새 문자 ' + texts + '건' + (cur ? ' (' + cur.agent + ' 이어서 읽는 중)' : ''));
 }
 
 function callLogFiles_(s, q) {
@@ -374,10 +433,11 @@ function isSharedDrive_(id) {
 }
 
 /** 드라이브 API 요청. 구글 쪽 일시 오류(5xx·429)는 잠깐 쉬었다가 최대 4번까지 다시 */
-function driveFetch_(url) {
+function driveFetch_(url, extraHeaders) {
+  const headers = Object.assign({ Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, extraHeaders || {});
   let res;
   for (let i = 0; i < 4; i++) {
-    res = fetch_(url, { headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+    res = fetch_(url, { headers: headers, muteHttpExceptions: true });
     const code = res.getResponseCode();
     if (code < 500 && code !== 429) return res;
     if (i < 3) Utilities.sleep(2000 * Math.pow(2, i));  // 2·4·8초
