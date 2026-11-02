@@ -116,6 +116,7 @@ function saveFetches_() {
  */
 function doGet(e) {
   const p = (e && e.parameter) || {};
+  if (p.action === 'audio') return audio_(p);
   const byServer = !!p.token;
   if (byServer && p.token !== CTI_TOKEN) return json_({ ok: false, error: '연동 키가 맞지 않아요' });
   if (!byServer && !sameDomainUser_()) return page_('동기화할 수 없어요', '회사 구글 계정으로 로그인한 브라우저에서 눌러 주세요.', false, {});
@@ -135,6 +136,22 @@ function doGet(e) {
   if (r.backups) lines.push('백업 ' + r.backups + '건을 처리했어요.');
   if (r.more) lines.push('남은 녹취는 곧 이어서 가져와요.');
   return page_('동기화했어요', lines.join(' '), true, r);
+}
+
+/**
+ * 대시보드 녹취 재생(배속)용: 대시보드가 서명한 10분짜리 링크로 녹취 파일 하나를 base64 로 건네줌.
+ * 서명 = HMAC-SHA256(연동 키, '파일ID.만료시각') — 연동 키를 모르면 링크를 만들 수 없다.
+ */
+function audio_(p) {
+  const exp = Number(p.exp || 0);
+  if (!p.id || !exp || exp * 1000 < Date.now()) return json_({ ok: false, error: '링크가 만료됐어요. 녹취를 다시 열어 주세요.' });
+  const want = Utilities.computeHmacSha256Signature(p.id + '.' + exp, CTI_TOKEN)
+    .map(function (b) { return ('0' + (b & 0xff).toString(16)).slice(-2); }).join('');
+  if (want !== p.sig) return json_({ ok: false, error: '링크가 맞지 않아요' });
+  const f = DriveApp.getFileById(p.id);
+  if (!AUDIO.test(f.getName()) || f.getSize() > 30 * 1024 * 1024) return json_({ ok: false, error: '재생할 수 없는 파일이에요' });
+  const blob = f.getBlob();
+  return json_({ ok: true, mime: blob.getContentType() || 'audio/mp4', b64: Utilities.base64Encode(blob.getBytes()) });
 }
 
 /** 웹 앱을 연 사람이 스크립트 주인과 같은 회사 도메인 계정인지 */

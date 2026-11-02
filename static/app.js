@@ -1218,6 +1218,17 @@
   $("#call-backdrop").addEventListener("click", closeCall);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCall(); });
 
+  let streamSrc = null;
+  async function loadStream(url) {
+    const r = await fetch(url);
+    const j = await r.json();
+    if (!j.ok) throw new Error(j.error || "재생 실패");
+    const bin = atob(j.b64), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    if (streamSrc) URL.revokeObjectURL(streamSrc);
+    streamSrc = URL.createObjectURL(new Blob([bytes], { type: j.mime }));
+    return streamSrc;
+  }
   const SPEEDS = [1, 1.25, 1.5, 2];
   function audioPlayer(src, onFail) {
     let rate = 1;
@@ -1253,10 +1264,18 @@
       const links = el("div", { class: "player-links" },
         el("a", { class: "btn btn-secondary", href: d.play.open_url, target: "_blank", rel: "noopener" }, "드라이브에서 열기"));
       const note = el("p", { class: "player-note" }, "회사 구글 계정으로 로그인돼 있어야 들을 수 있어요.");
-      // 바로 재생(배속 가능)을 먼저 시도하고, 브라우저가 막으면 드라이브 미리보기로
-      const fallback = () => player.replaceChildren(
+      // 앱스크립트 웹 앱이 있으면 파일을 받아 <audio>로(배속 가능), 없거나 실패하면 드라이브 미리보기로
+      const preview = () => player.replaceChildren(
         el("iframe", { src: d.play.preview_url, allow: "autoplay", title: "녹취 재생", loading: "lazy" }), links, note);
-      player.replaceChildren(...audioPlayer(d.play.audio_url, fallback), links, note);
+      if (!d.play.stream_url) preview();
+      else {
+        const callId = d.id;
+        player.replaceChildren(el("div", { class: "player-none" }, "녹취를 불러오고 있어요…"), links);
+        loadStream(d.play.stream_url).then((src) => {
+          if (cs.current !== callId || !$("#call-sheet").classList.contains("open")) return;  // 그사이 닫았거나 다른 녹취를 열었음
+          player.replaceChildren(...audioPlayer(src, preview), links);
+        }).catch(preview);
+      }
     }
 
     const row = (k, v) => el("div", { class: "status-row" }, el("span", { class: "k" }, k), el("span", { class: "v" }, v));

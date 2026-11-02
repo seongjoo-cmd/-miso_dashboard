@@ -78,5 +78,21 @@ class MessagesTest(unittest.TestCase):
         self.assertEqual(s["agents"][0]["followed"], 1)
 
 
+class StreamUrlTest(unittest.TestCase):
+    def test_signed_link_only_with_webapp(self):
+        import hashlib
+        import hmac
+        from urllib.parse import parse_qs, urlparse
+        from cti import calls
+        from cti.db import set_setting
+        conn = connect(":memory:")
+        self.assertIsNone(calls.stream_url(conn, "F1"))
+        set_setting(conn, "drive_webapp_url", "https://script.google.com/macros/s/X/exec")
+        set_setting(conn, "drive_push_token", "tok")
+        q = parse_qs(urlparse(calls.stream_url(conn, "F1")).query)
+        sig = hmac.new(b"tok", f"F1.{q['exp'][0]}".encode(), hashlib.sha256).hexdigest()
+        self.assertEqual((q["action"][0], q["id"][0], q["sig"][0]), ("audio", "F1", sig))
+
+
 if __name__ == "__main__":
     unittest.main()

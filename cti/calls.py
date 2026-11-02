@@ -9,8 +9,13 @@
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
+import time
 from datetime import timedelta
+
+from .db import get_setting
 
 from .ingest import customer_key, hash_key
 from .periods import Period
@@ -121,6 +126,23 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
     }
 
 
+STREAM_TTL_SEC = 600
+
+
+def stream_url(conn, file_id: str) -> str | None:
+    """앱스크립트 웹 앱이 녹취 파일을 대신 건네주는 10분짜리 서명 링크(배속 재생용). 웹 앱이 없으면 None.
+
+    브라우저는 다른 사이트에서 구글 로그인으로 드라이브 파일을 받지 못해서, 드라이브 권한이 있는 스크립트를 거친다.
+    서명 키는 스크립트에 들어 있는 연동 키 — 링크를 가져가도 이 파일만, 만료 전까지만 받을 수 있다.
+    """
+    url, key = get_setting(conn, "drive_webapp_url"), get_setting(conn, "drive_push_token")
+    if not url or not key:
+        return None
+    exp = int(time.time()) + STREAM_TTL_SEC
+    sig = hmac.new(key.encode(), f"{file_id}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return f"{url}?action=audio&id={file_id}&exp={exp}&sig={sig}"
+
+
 def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
     r = conn.execute(
         """
@@ -139,9 +161,7 @@ def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
     if fid == "demo":
         play = {"type": "demo", "url": DEMO_AUDIO}
     elif fid:
-        play = {"type": "drive",
-                # 브라우저가 회사 구글 로그인으로 파일을 바로 받아 <audio>로 재생(배속 가능). 막히면 미리보기로
-                "audio_url": f"https://drive.usercontent.google.com/download?id={fid}&export=download",
+        play = {"type": "drive", "stream_url": stream_url(conn, fid),
                 "preview_url": f"https://drive.google.com/file/d/{fid}/preview",
                 "open_url": f"https://drive.google.com/file/d/{fid}/view"}
     else:
