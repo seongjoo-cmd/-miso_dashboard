@@ -379,14 +379,26 @@ function readText_(id) {
   return res.getContentText('UTF-8');
 }
 
-/** XML 에서 <이름 …> 태그마다 속성 객체(따옴표 안의 '>' 도 견딤) */
+/** XML 에서 <이름 …> 태그마다 속성 객체(따옴표 안의 '>' 도 견딤). 정규식 한 번에 긴 태그를 읽으면 스택이 넘쳐서 글자를 직접 훑음 */
 function xmlTags_(xml, name, fn) {
-  const tag = new RegExp('<' + name + '\\s((?:[^>"]|"[^"]*")*)>', 'g');
-  let m;
-  while ((m = tag.exec(xml))) {
+  const open = '<' + name;
+  const MAX_TAG = 200000;  // 태그 하나가 이보다 길면(조각 끝에서 잘린 경우 등) 건너뜀
+  let i = 0;
+  while ((i = xml.indexOf(open, i)) !== -1) {
+    const next = xml.charCodeAt(i + open.length);
+    if (next !== 32 && next !== 9 && next !== 10 && next !== 13) { i += open.length; continue; }  // <smses> 같은 다른 태그
+    const lim = Math.min(xml.length, i + MAX_TAG);
+    let j = i + open.length, quoted = false;
+    for (; j < lim; j++) {
+      const c = xml.charCodeAt(j);
+      if (c === 34) quoted = !quoted;
+      else if (c === 62 && !quoted) break;
+    }
+    if (j >= lim) { i += open.length; continue; }  // 닫는 '>' 를 못 찾음
     const a = {};
-    m[1].replace(/([\w:]+)="([^"]*)"/g, function (_, k, v) { a[k] = v; return ''; });
+    xml.substring(i + open.length, j).replace(/([\w:]+)="([^"]*)"/g, function (_, k, v) { a[k] = v; return ''; });
     fn(a);
+    i = j + 1;
   }
 }
 
