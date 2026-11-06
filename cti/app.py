@@ -29,7 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import auth, signup, backup, calllog, calls, dashboard, demo, drive_backup, ingest, slack, sms, touches, uploads
+from . import auth, signup, backup, calllog, calls, dashboard, demo, drive_backup, hubspot, ingest, slack, sms, touches, uploads
 from .db import connect, get_setting, get_setting_int, set_setting
 from .periods import PRESETS, resolve
 
@@ -393,7 +393,12 @@ def make_handler(cfg: Config):
                 return self._send_json(200, calllog.ingest_file(conn, fid, agent, entries))
             if method == "POST" and path == "/api/drive/run":
                 self._check_drive_token(conn)
-                return self._send_json(200, uploads.record_run(conn, self._read_json()))
+                out = uploads.record_run(conn, self._read_json())
+                try:
+                    hubspot.maybe_sync(conn)  # 스크립트가 들른 김에 허브스팟 계약 고객도 가볍게 갱신(실패해도 무시)
+                except Exception as e:  # noqa: BLE001
+                    print(f"허브스팟 동기화 오류: {e}", flush=True)
+                return self._send_json(200, out)
             if path == "/api/drive/tasks" and method == "GET":
                 self._check_drive_token(conn)
                 return self._send_json(200, {"tasks": drive_backup.pending(conn)})
@@ -502,7 +507,16 @@ def make_handler(cfg: Config):
                        "agents": uploads.agent_uploads(conn, cfg.today())}
                 if user["role"] == "admin":
                     out["slack"] = slack.config(conn)
+                    out["hubspot"] = hubspot.status(conn)
                 return self._send_json(200, out)
+            if method == "POST" and path == "/api/hubspot/sync":
+                if user["role"] != "admin":
+                    raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 가져올 수 있어요.")
+                body = self._read_json()
+                if not hubspot.token():
+                    raise ApiError(HTTPStatus.BAD_REQUEST, "HUBSPOT_TOKEN 환경 변수가 없어요. 배포 설정에 먼저 넣어 주세요.")
+                r = hubspot.sync(conn, budget=20.0, full=bool(body.get("full")))
+                return self._send_json(200, {**r, **hubspot.status(conn)})
             if method == "POST" and path == "/api/slack/config":
                 if user["role"] != "admin":
                     raise ApiError(HTTPStatus.FORBIDDEN, "관리자만 바꿀 수 있어요.")
@@ -552,7 +566,8 @@ def make_handler(cfg: Config):
                         conn, period, _parse_agent(q), q.get("q"),
                         _parse_int(q, "same_as"), _parse_int(q, "min_sec"), q.get("cursor"),
                         hour_from=_parse_int(q, "hour_from"), hour_to=_parse_int(q, "hour_to"),
-                        contract_only=q.get("contract") == "1", full_phone=user["role"] == "admin"))
+                        contract_only=q.get("contract") == "1", no_contract=q.get("contract") == "0",
+                        full_phone=user["role"] == "admin"))
                 except calls.SearchError as e:
                     raise ApiError(HTTPStatus.BAD_REQUEST, str(e))
             m = re.fullmatch(r"/api/calls/(\d+)", path)

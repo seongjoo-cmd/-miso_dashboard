@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_agent_sent ON messages(agent_id, sent_at);
 
+-- 허브스팟 777 파이프라인 '계약 완료' 딜의 연락처 번호(HMAC). 이 고객의 통화는 모두 '계약완료'로 보인다
+CREATE TABLE IF NOT EXISTS hubspot_contracts (
+    customer_key TEXT PRIMARY KEY,
+    deal_id      TEXT,
+    synced_at    TEXT
+);
+
 -- 이미 읽은 통화 기록·문자 백업 파일(드라이브 파일 ID)
 CREATE TABLE IF NOT EXISTS call_log_files (
     file_id   TEXT PRIMARY KEY,

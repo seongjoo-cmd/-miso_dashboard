@@ -19,6 +19,7 @@ class ApiTest(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         root = Path(cls.tmp.name)
+        cls.cfg_db = root / "t.db"
         cfg = Config(root / "t.db", root / "sync", root / "backup", today=lambda: date(2026, 10, 12))
         conn = connect(cfg.db_path)
         conn.execute("INSERT INTO agents(id, name) VALUES (1, '가')")
@@ -61,6 +62,29 @@ class ApiTest(unittest.TestCase):
         status, _, cookie = self.req("POST", "/api/login", {"username": user, "password": pw})
         self.assertEqual(status, 200)
         return cookie.split(";")[0].split("=", 1)[1]
+
+    def test_hubspot_contract_filter_and_admin_only_sync(self):
+        admin, viewer = self.login("admin", "pw-admin"), self.login("viewer", "pw-viewer")
+        q = "/api/calls?preset=custom&start=2026-10-12&end=2026-10-12"
+        all_n = self.req("GET", q, token=viewer)[1]["total"]
+        self.assertEqual(self.req("GET", q + "&contract=0", token=viewer)[1]["total"], all_n)
+        conn = connect(self.cfg_db)
+        conn.execute("INSERT OR IGNORE INTO hubspot_contracts(customer_key, deal_id) VALUES ('A', 'd1')")
+        conn.commit()
+        conn.close()
+        _, no, _ = self.req("GET", q + "&contract=0", token=viewer)
+        _, yes, _ = self.req("GET", q + "&contract=1", token=viewer)
+        self.assertEqual((yes["total"], no["total"]), (1, all_n - 1))
+        self.assertTrue(yes["items"][0]["contracted"])
+        self.assertEqual(self.req("POST", "/api/hubspot/sync", {}, token=viewer)[0], 403)
+        with mock.patch.dict("os.environ", {"HUBSPOT_TOKEN": ""}):
+            self.assertEqual(self.req("POST", "/api/hubspot/sync", {}, token=admin)[0], 400)
+        self.assertEqual(self.req("GET", "/api/uploads", token=admin)[1]["hubspot"]["customers"], 1)
+        self.assertNotIn("hubspot", self.req("GET", "/api/uploads", token=viewer)[1])
+        conn = connect(self.cfg_db)  # 다른 테스트에 영향이 없게 되돌림
+        conn.execute("DELETE FROM hubspot_contracts")
+        conn.commit()
+        conn.close()
 
     def test_requires_login(self):
         self.assertEqual(self.req("GET", "/api/dashboard")[0], 401)

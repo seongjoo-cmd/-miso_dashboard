@@ -21,6 +21,9 @@ from .ingest import customer_key, hash_key
 from .periods import Period
 
 PAGE = 50
+# 계약완료 통화: 드라이브 '계약완료' 폴더의 녹취이거나, 허브스팟에서 계약 완료된 고객(고객 단위)의 통화
+CONTRACTED_SQL = ("(c.contracted = 1 OR EXISTS (SELECT 1 FROM hubspot_contracts h "
+                  "WHERE h.customer_key = c.customer_key))")
 DEMO_AUDIO = "/static/demo-call.wav"
 
 
@@ -43,7 +46,7 @@ def shown_phone(r, full_phone: bool) -> str | None:
 def search(conn, period: Period | None, agent_id: int | None = None, q: str | None = None,
            same_as: int | None = None, min_sec: int | None = None, cursor: str | None = None,
            limit: int = PAGE, hour_from: int | None = None, hour_to: int | None = None,
-           contract_only: bool = False, full_phone: bool = False) -> dict:
+           contract_only: bool = False, full_phone: bool = False, no_contract: bool = False) -> dict:
     """hour_from 이상 hour_to 미만 시각(0~24시)에 시작한 통화."""
     where, args = [], []
     by_customer = False
@@ -81,7 +84,9 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
         where.append("substr(c.started_at, 12, 2) >= ? AND substr(c.started_at, 12, 2) < ?")
         args += [f"{lo:02d}", f"{hi:02d}"]
     if contract_only:
-        where.append("c.contracted = 1")
+        where.append(CONTRACTED_SQL)
+    elif no_contract:
+        where.append(f"NOT {CONTRACTED_SQL}")
     if min_sec:
         where.append("c.duration_sec >= ?"); args.append(min_sec)
 
@@ -103,7 +108,7 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
     rows = conn.execute(
         f"""
         SELECT c.id, c.started_at, c.agent_id, a.name AS agent_name, c.customer_masked, c.customer_phone,
-               c.duration_sec, c.drive_file_id, c.contracted
+               c.duration_sec, c.drive_file_id, {CONTRACTED_SQL} AS is_contract
         FROM calls c JOIN agents a ON a.id = c.agent_id
         WHERE {page_where}
         ORDER BY c.started_at DESC, c.id DESC
@@ -116,7 +121,7 @@ def search(conn, period: Period | None, agent_id: int | None = None, q: str | No
     items = [{
         "id": r["id"], "started_at": r["started_at"], "agent_id": r["agent_id"], "agent_name": r["agent_name"],
         "customer_masked": shown_phone(r, full_phone), "duration_sec": r["duration_sec"],
-        "playable": bool(r["drive_file_id"]), "contracted": bool(r["contracted"]),
+        "playable": bool(r["drive_file_id"]), "contracted": bool(r["is_contract"]),
     } for r in rows]
     return {
         "items": items,
@@ -145,9 +150,10 @@ def stream_url(conn, file_id: str) -> str | None:
 
 def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
     r = conn.execute(
-        """
+        f"""
         SELECT c.id, c.started_at, c.agent_id, a.name AS agent_name, a.extension, c.customer_masked,
-               c.customer_phone, c.customer_key, c.duration_sec, c.duration_source, c.drive_file_id, c.contracted
+               c.customer_phone, c.customer_key, c.duration_sec, c.duration_source, c.drive_file_id,
+               {CONTRACTED_SQL} AS is_contract
         FROM calls c JOIN agents a ON a.id = c.agent_id WHERE c.id = ?
         """,
         (call_id,),
@@ -170,5 +176,5 @@ def detail(conn, call_id: int, full_phone: bool = False) -> dict | None:
         "id": r["id"], "started_at": r["started_at"], "agent_id": r["agent_id"], "agent_name": r["agent_name"],
         "extension": r["extension"], "customer_masked": shown_phone(r, full_phone), "duration_sec": r["duration_sec"],
         "duration_estimated": r["duration_source"] == "size", "same_customer_calls": same, "play": play,
-        "contracted": bool(r["contracted"]),
+        "contracted": bool(r["is_contract"]),
     }

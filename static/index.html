@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400..800&display=swap">
   <title>miso internet sales 통화 대시보드</title>
-  <link rel="stylesheet" href="/static/app.css?v=20261102-1">
+  <link rel="stylesheet" href="/static/app.css?v=20261105-1">
   <script src="/static/vendor/chart.umd.js?v=4.4.1"></script>
 </head>
 <body>
@@ -131,6 +131,7 @@
 
         <label class="lk-check"><input type="checkbox" id="lk-short"> 짧은 통화 빼기</label>
         <label class="lk-check"><input type="checkbox" id="lk-contract"> 계약완료만 보기</label>
+        <label class="lk-check"><input type="checkbox" id="lk-nocontract"> 계약 안 된 콜만 보기</label>
         <p id="lookup-err" class="form-msg err" role="alert"></p>
         <button type="submit" class="btn btn-primary btn-lg btn-block">조회하기</button>
       </form>
@@ -313,6 +314,15 @@
           <div class="btn-stack">
             <button type="button" id="slack-save" class="btn btn-secondary btn-lg btn-block">슬랙 설정 저장</button>
             <button type="button" id="slack-notify" class="btn btn-primary btn-lg btn-block">안 올린 에이전트 슬랙으로 알리기</button>
+          </div>
+        </div>
+        <div id="hubspot-box" hidden>
+          <h3 class="sub-h">허브스팟 계약 연동</h3>
+          <p class="help" id="hubspot-help"></p>
+          <p id="hubspot-msg" class="form-msg" role="status"></p>
+          <div class="btn-stack">
+            <button type="button" id="hubspot-sync" class="btn btn-secondary btn-lg btn-block">지금 가져오기</button>
+            <button type="button" id="hubspot-full" class="btn btn-secondary btn-lg btn-block">처음부터 다시 가져오기</button>
           </div>
         </div>
       </section>
@@ -501,6 +511,6 @@
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
-  <script src="/static/app.js?v=20261102-2"></script>
+  <script src="/static/app.js?v=20261105-1"></script>
 </body>
 </html>

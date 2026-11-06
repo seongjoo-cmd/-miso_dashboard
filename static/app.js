@@ -936,7 +936,7 @@
   }
   function resetLookup() {
     [cs.start, cs.end] = quickRange("today");
-    Object.assign(cs, { hfrom: 0, hto: 24, agentId: "", num: "", hideShort: false, contractOnly: false, sameAs: null });
+    Object.assign(cs, { hfrom: 0, hto: 24, agentId: "", num: "", hideShort: false, contractOnly: false, noContract: false, sameAs: null });
     fillLookup();
   }
   function fillLookup() {
@@ -944,6 +944,7 @@
     $("#lk-hfrom").value = cs.hfrom; $("#lk-hto").value = cs.hto;
     $("#lk-agent").value = cs.agentId; $("#lk-num").value = cs.num; $("#lk-short").checked = cs.hideShort;
     $("#lk-contract").checked = cs.contractOnly;
+    $("#lk-nocontract").checked = cs.noContract;
     markQuickDate();
   }
   function markQuickDate() {
@@ -1076,7 +1077,8 @@
       err.textContent = "고객번호는 전체 번호나 뒤 4자리로 넣어 주세요."; return;
     }
     Object.assign(cs, { start: s, end: en, hfrom: hf, hto: ht, agentId: $("#lk-agent").value, num,
-      hideShort: $("#lk-short").checked, contractOnly: $("#lk-contract").checked, sameAs: null });
+      hideShort: $("#lk-short").checked, contractOnly: $("#lk-contract").checked,
+      noContract: $("#lk-nocontract").checked, sameAs: null });
     $("#lk-num").blur();
     loadCalls().then(() => {
       // 휴대폰: 조회 후 결과가 보이게 스크롤
@@ -1095,6 +1097,7 @@
     else if (cs.num) p.set("q", cs.num);
     if (cs.hideShort && state.minSec) p.set("min_sec", state.minSec);
     if (cs.contractOnly) p.set("contract", "1");
+    else if (cs.noContract) p.set("contract", "0");
     if (cursor) p.set("cursor", cursor);
     return p;
   }
@@ -1110,6 +1113,7 @@
     if (cs.num) parts.push(`‘${cs.num}’`);
     if (cs.hideShort) parts.push("짧은 통화 제외");
     if (cs.contractOnly) parts.push("계약완료만");
+    else if (cs.noContract) parts.push("계약 안 된 콜만");
     return parts.join(" · ");
   }
 
@@ -1170,7 +1174,7 @@
       el("span", { class: "call-main" },
         el("div", { class: `call-num${c.customer_masked ? "" : " none"}` }, c.customer_masked || "번호 없음"),
         el("div", { class: "call-agent" }, `${c.agent_name} 에이전트`)),
-      c.contracted ? el("span", { class: "contract-badge" }, "계약") : null,
+      c.contracted ? el("span", { class: "contract-badge" }, "계약완료") : null,
       el("span", { class: `call-dur${c.duration_sec < minSec ? " short" : ""}` }, fmtDur(c.duration_sec)),
       el("span", { class: `play-ic${c.playable ? "" : " off"}`, "aria-label": c.playable ? "재생 가능" : "재생 불가" },
         playIcon())));
@@ -1284,7 +1288,7 @@
       row("통화 시간", `${fmtDur(d.duration_sec)}${d.duration_estimated ? " (추정)" : ""}`),
       row("에이전트", `${d.agent_name}${d.extension ? ` · 내선 ${d.extension}` : ""}`),
       row("고객번호", d.customer_masked || "없음"),
-      ...(d.contracted ? [row("계약", "계약 완료")] : []));
+      ...(d.contracted ? [row("계약", "계약완료")] : []));
 
     const same = $("#call-same");
     same.hidden = !d.customer_masked || d.same_customer_calls < 2;
@@ -1375,6 +1379,7 @@
         el("div", { class: "s" }, a.last_upload ? `마지막 업로드 ${fmtAgo(a.last_upload)}` : "아직 올린 녹취가 없어요")),
       el("span", { class: `tag ${a.missing ? "tag-fail" : "tag-done"}` }, a.missing ? "오늘 없음" : `오늘 ${fmtInt(a.today)}개`)))
       : [el("li", { class: "empty" }, "에이전트가 없어요")]));
+    renderHubspot(u.hubspot);
     const s = u.slack;
     $("#slack-box").hidden = !s;
     if (!s) return;
@@ -1388,6 +1393,45 @@
     const n = u.agents.filter((a) => a.missing).length;
     $("#slack-notify").textContent = n ? `오늘 안 올린 ${fmtInt(n)}명 슬랙으로 알리기` : "모두 올렸어요 · 슬랙으로 알리기";
   }
+  // 두 체크는 같이 켤 수 없어요(계약완료만 ↔ 계약 안 된 콜만)
+  $("#lk-contract").addEventListener("change", (e) => { if (e.target.checked) $("#lk-nocontract").checked = false; });
+  $("#lk-nocontract").addEventListener("change", (e) => { if (e.target.checked) $("#lk-contract").checked = false; });
+
+  // ---------- 허브스팟 계약 연동(관리자) ----------
+  function renderHubspot(h) {
+    $("#hubspot-box").hidden = !h;
+    if (!h) return;
+    $("#hubspot-help").textContent = !h.connected
+      ? "허브스팟 토큰(HUBSPOT_TOKEN)이 아직 없어요. 배포 설정의 환경 변수에 넣으면 777 파이프라인의 계약 완료 고객을 가져와요."
+      : `계약 완료 고객 ${fmtInt(h.customers)}명${h.last_ok ? ` · 마지막 가져오기 ${fmtAgo(h.last_ok)}` : ""}`
+        + (h.catching_up ? " · 처음 가져오는 중이라 몇 번 나눠서 이어져요" : "")
+        + "\n이 고객의 통화는 모두 ‘계약완료’로 보여요. 10분마다 자동으로 새로 고쳐요.";
+    $("#hubspot-help").style.whiteSpace = "pre-line";
+    const msg = $("#hubspot-msg");
+    if (h.error) { msg.className = "form-msg err"; msg.textContent = h.error; }
+    else if (msg.className.includes("err")) { msg.className = "form-msg"; msg.textContent = ""; }
+    $("#hubspot-sync").disabled = !h.connected;
+    $("#hubspot-full").disabled = !h.connected;
+  }
+  async function hubspotSync(full) {
+    const msg = $("#hubspot-msg"), btns = [$("#hubspot-sync"), $("#hubspot-full")];
+    if (full && !(await ask("처음부터 다시 가져올까요?", "계약 완료 고객 목록을 비우고 허브스팟에서 다시 받아요. 오래 걸리면 몇 번 나눠서 이어져요.", "다시 가져오기"))) return;
+    btns.forEach((b) => { b.disabled = true; });
+    msg.className = "form-msg"; msg.textContent = "가져오는 중이에요…";
+    try {
+      const r = await api("/api/hubspot/sync", { method: "POST", body: JSON.stringify({ full }) });
+      renderHubspot(r);
+      if (r.busy) { msg.className = "form-msg"; msg.textContent = "이미 가져오는 중이에요."; }
+      else if (r.error) { msg.className = "form-msg err"; msg.textContent = r.error; }
+      else {
+        msg.className = "form-msg ok";
+        msg.textContent = r.done ? `끝났어요. 계약 완료 고객 ${fmtInt(r.customers)}명` : `일부만 가져왔어요(${fmtInt(r.customers)}명). 잠시 뒤 한 번 더 눌러 주세요.`;
+      }
+    } catch (err) { msg.className = "form-msg err"; msg.textContent = err.message; }
+    finally { btns.forEach((b) => { b.disabled = false; }); }
+  }
+  $("#hubspot-sync").addEventListener("click", () => hubspotSync(false));
+  $("#hubspot-full").addEventListener("click", () => hubspotSync(true));
   $("#slack-save").addEventListener("click", async () => {
     const msg = $("#slack-msg"), body = { target: $("#slack-target").value.trim() };
     const tok = $("#slack-token").value.trim();
